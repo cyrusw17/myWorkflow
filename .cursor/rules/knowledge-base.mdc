@@ -1,0 +1,34 @@
+---
+description: Load Groundwork Web knowledge base before answering business or technical questions
+alwaysApply: true
+---
+
+# Knowledge Base Protocol
+
+Before answering questions about **Groundwork Web**, **Cyrus's business**, **the offer**, **outreach**, **priorities**, **deployment**, or **the MVP site**:
+
+1. **Read** `knowledge-base/README.md` for the file index and quick facts
+2. **Read the relevant KB file(s)** for the topic:
+   - Mission / coaching / decisions → `knowledge-base/01-founder-and-mission.md`
+   - Offer / sales / positioning → `knowledge-base/02-offer-sales-and-positioning.md`
+   - Phases / rhythm / what not to do → `knowledge-base/03-priorities-and-operations.md`
+   - MVP site / Git / cPanel / DNS / forms → `knowledge-base/04-technical-mvp-and-deploy.md`
+   - Locked decisions / history → `knowledge-base/05-decisions-and-changelog.md`
+3. **Cross-check** live offer numbers in `mvp-website/config/site.php` when discussing pricing or spots
+4. **Treat KB as priority** over general assumptions unless Cyrus gives new instructions in the current chat
+
+## Authority order (when docs conflict)
+
+1. Current chat instruction from Cyrus
+2. `knowledge-base/05-decisions-and-changelog.md` (locked decisions)
+3. `mvp-website/config/site.php` (live site copy)
+4. Other `knowledge-base/*.md` files
+5. `business-profile.md`, `priorities.md`, `first-steps.md`, `operations.md`
+
+## After major changes
+
+When strategy, offer, deploy setup, or priorities change in a session, **update the relevant KB file** and add an entry to `05-decisions-and-changelog.md`.
+
+## Master prompt
+
+For new AI chats or full onboarding, use `knowledge-base/master-prompt.md`.

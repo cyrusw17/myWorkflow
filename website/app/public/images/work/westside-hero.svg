@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-label="Westside Auto Care website preview">
+  <rect width="800" height="500" fill="#fafaf8"/>
+  <rect x="0" y="0" width="800" height="56" fill="#171717"/>
+  <text x="40" y="36" fill="#fff" font-family="system-ui,sans-serif" font-size="18" font-weight="600">Westside Auto Care</text>
+  <text x="600" y="36" fill="#b87333" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Call Now</text>
+  <rect x="40" y="100" width="420" height="32" fill="#171717" rx="4"/>
+  <rect x="40" y="148" width="360" height="16" fill="#e8e6e1" rx="2"/>
+  <rect x="40" y="176" width="300" height="16" fill="#e8e6e1" rx="2"/>
+  <rect x="40" y="220" width="160" height="44" fill="#b87333" rx="22"/>
+  <text x="68" y="248" fill="#fff" font-family="system-ui,sans-serif" font-size="14" font-weight="500">Book Service</text>
+  <rect x="480" y="100" width="280" height="320" fill="#f5ede6" rx="8" stroke="#e8e6e1"/>
+  <text x="520" y="280" fill="#6b6b6b" font-family="system-ui,sans-serif" font-size="14">Shop preview</text>
+</svg>
