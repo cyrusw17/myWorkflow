@@ -10,6 +10,7 @@ deployment:
     - /bin/mkdir -p $APPROOT/storage
     - /bin/cp public/index.php $DEPLOYPATH
     - /bin/cp public/robots.txt $DEPLOYPATH
+    - /bin/cp public/sitemap.xml $DEPLOYPATH
     - /bin/cp public/.htaccess $DEPLOYPATH
     - /bin/cp -R public/css $DEPLOYPATH
     - /bin/cp -R public/js $DEPLOYPATH

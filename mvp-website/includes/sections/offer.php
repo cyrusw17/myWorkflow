@@ -1,42 +1,52 @@
 <?php $offer = config('offer'); ?>
-<section class="section section-dark" id="offer">
-    <div class="container reveal">
-        <div class="offer-split">
-            <div>
-                <p class="eyebrow eyebrow-light">The offer</p>
-                <h2 class="section-title light"><?= e($offer['name']) ?></h2>
-                <p class="section-lead light">
-                    Normally <s>$<?= number_format($offer['setup_normal']) ?>+</s> to build your site.
-                    Founding clients pay <strong>$<?= $offer['monthly'] ?>/month</strong> — that's it.
-                </p>
-                <ul class="offer-details">
-                    <li><i data-lucide="check-circle"></i> No setup fee for founding clients</li>
-                    <li><i data-lucide="check-circle"></i> Custom-built website — not a template</li>
-                    <li><i data-lucide="check-circle"></i> Hosting, SSL, and security included</li>
-                    <li><i data-lucide="check-circle"></i> Maintenance and updates handled for you</li>
-                    <li><i data-lucide="check-circle"></i> Professional support when you need it</li>
+<section class="section section-offer" id="offer">
+    <div class="container">
+        <div class="offer-funnel reveal">
+            <p class="offer-funnel__label">Normal pricing</p>
+            <p class="offer-funnel__was">$<?= number_format($offer['setup_normal']) ?>+ setup</p>
+            <p class="offer-funnel__plus">+ $<?= $offer['monthly'] ?>/month</p>
+
+            <div class="offer-funnel__arrow" aria-hidden="true">↓</div>
+
+            <p class="offer-funnel__today">Today — Launch Partner pricing</p>
+            <p class="offer-funnel__hero-price">$0 <span>setup</span></p>
+            <p class="offer-funnel__monthly">$<?= $offer['monthly'] ?>/month</p>
+
+            <div class="offer-funnel__arrow" aria-hidden="true">↓</div>
+
+            <p class="offer-funnel__urgency">
+                Only <strong><?= (int) $offer['spots_remaining'] ?></strong> Launch Partner spots remaining
+            </p>
+        </div>
+
+        <div class="offer-details reveal">
+            <div class="offer-col">
+                <h3>Includes</h3>
+                <ul>
+                    <li>Custom 5-page website</li>
+                    <li>Mobile-first, lead-generation focused</li>
+                    <li>Hosting, maintenance & updates</li>
+                    <li>Unlimited technical support</li>
+                    <li>Launch in ~<?= e($offer['build_weeks']) ?> weeks</li>
                 </ul>
             </div>
-            <div class="pricing-panel">
-                <div class="spots-badge">
-                    <span class="spots-num"><?= (int) $offer['spots_remaining'] ?></span>
-                    <span class="spots-label">of <?= (int) $offer['spots_total'] ?> founding spots open</span>
-                </div>
-                <div class="pricing-compare">
-                    <div class="pricing-col muted">
-                        <p>After program closes</p>
-                        <p class="big">$<?= number_format($offer['setup_normal']) ?></p>
-                        <p>setup + $<?= $offer['monthly'] ?>/mo</p>
-                    </div>
-                    <div class="pricing-col active">
-                        <p>Founding clients</p>
-                        <p class="big">$0</p>
-                        <p>setup + $<?= $offer['monthly'] ?>/mo</p>
-                    </div>
-                </div>
-                <p class="pricing-note"><?= $offer['term_months'] ?>-month minimum partnership · testimonial required</p>
-                <a href="#apply" class="btn btn-primary btn-block btn-lg">Apply for a Founding Spot</a>
+            <div class="offer-col">
+                <h3>Requirements</h3>
+                <ul>
+                    <li><?= (int) $offer['term_months'] ?>-month partnership</li>
+                    <li>Testimonial at launch</li>
+                    <li>Case study permission</li>
+                </ul>
             </div>
+        </div>
+
+        <p class="offer-after reveal">
+            After the final <?= (int) $offer['spots_remaining'] ?> spots are filled, pricing becomes
+            <strong>$<?= number_format($offer['setup_normal']) ?> setup + $<?= $offer['monthly'] ?>/month</strong> immediately.
+        </p>
+
+        <div class="section-cta-center reveal">
+            <?php $size = 'lg'; $showAlt = true; require dirname(__DIR__) . '/partials/text-cta.php'; ?>
         </div>
     </div>
 </section>

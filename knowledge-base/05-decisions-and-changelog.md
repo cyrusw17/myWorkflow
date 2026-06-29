@@ -62,6 +62,16 @@
 
 ## Changelog
 
+### 2026-06-28 — Landing page v3: text-first CRO rebuild + production audit
+- Repositioned MVP as a single-objective **text-message** landing page for cold Facebook traffic
+- Renamed offer to **Launch Partner Program** (was Founding Client Program) on the live site
+- Primary CTA everywhere: **Text "LAUNCH" to (number)**; alt CTA: "See If Your Business Qualifies" (form fallback)
+- New structure: Hero → Offer funnel → Why This Exists → What's Included → How It Works → Custom vs Templates → FAQ → Final CTA + qualify form
+- Removed third-party JS (GSAP, Lenis, ScrollTrigger) → replaced with ~90-line IntersectionObserver; no scroll hijacking on mobile
+- Production audit fixes: no-FOUC reveal, accessible mobile CTA (not tab-focusable when hidden), anchor scroll-offset, `.htaccess` HTTPS redirect + security headers + caching/compression, real `sitemap.xml`, PNG OG image (Facebook-renderable) replacing stale SVG
+- Phone number is env-driven; site degrades gracefully to the form if unset
+- **Pre-launch requirement:** set `SITE_PHONE_DISPLAY` + `SITE_PHONE_SMS` in production `~/.env`
+
 ### 2026-06-28 — myWorkflow repo created
 - Entire `Business/` folder pushed to https://github.com/cyrusw17/myWorkflow
 - `mvp-website/.git` merged into parent repo (offer1 remains separate cPanel deploy target)
@@ -119,9 +129,9 @@
 
 | Term used | Meaning |
 |-----------|---------|
-| Founding Client Program | Canonical — live on site |
-| Founding Partner Program | Older docs (`first-steps.md`) — same offer |
+| Launch Partner Program | **Canonical** — live on site (as of 2026-06-28) |
+| Founding Client / Founding Partner Program | Older docs — same offer, same terms |
 | MVP website | `mvp-website/` landing page |
 | Full site | `website/app/` Laravel agency site |
 
-When updating copy, use **Founding Client Program** unless Cyrus says otherwise.
+When updating copy, use **Launch Partner Program** unless Cyrus says otherwise. Same offer terms ($0 setup, $199/mo, 12-month, 2 of 3 spots).

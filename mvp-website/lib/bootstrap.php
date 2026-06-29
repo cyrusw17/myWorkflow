@@ -40,3 +40,32 @@ function asset(string $path): string
     $base = rtrim(config('url', ''), '/');
     return $base . '/' . ltrim($path, '/');
 }
+
+function phone_digits(): string
+{
+    return preg_replace('/\D/', '', (string) config('phone_sms', ''));
+}
+
+function has_phone(): bool
+{
+    return phone_digits() !== '' && trim((string) config('phone_display', '')) !== '';
+}
+
+function sms_href(): string
+{
+    if (! has_phone()) {
+        return '#qualify';
+    }
+    $body = rawurlencode((string) config('sms_keyword', 'LAUNCH'));
+
+    return 'sms:' . phone_digits() . '?&body=' . $body;
+}
+
+function text_cta_label(): string
+{
+    if (! has_phone()) {
+        return 'Apply for a Launch Partner Spot';
+    }
+
+    return 'Text "' . config('sms_keyword', 'LAUNCH') . '" to ' . config('phone_display', '');
+}

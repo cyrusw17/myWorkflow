@@ -2,102 +2,101 @@
   'use strict';
 
   var header = document.querySelector('.site-header');
-  var mobileCta = document.querySelector('.mobile-cta');
-  var applySection = document.querySelector('#apply');
+  var stickyBar = document.querySelector('.sticky-bar');
+  var heroSection = document.querySelector('.hero');
+  var qualifySection = document.querySelector('#qualify');
 
-  function onScroll() {
+  // Sticky header state + floating conversion bar visibility
+  var ticking = false;
+  function update() {
     var y = window.scrollY;
-    if (header) header.classList.toggle('is-scrolled', y > 48);
-    if (mobileCta && applySection) {
-      var rect = applySection.getBoundingClientRect();
-      var show = y > 400 && rect.top > window.innerHeight;
-      mobileCta.classList.toggle('is-visible', show);
-      mobileCta.setAttribute('aria-hidden', show ? 'false' : 'true');
+    if (header) header.classList.toggle('is-scrolled', y > 24);
+    if (stickyBar) {
+      // Show once the hero CTA has scrolled away; hide while the form is on screen
+      var pastHero = heroSection ? (heroSection.getBoundingClientRect().bottom < 80) : (y > 480);
+      var formInView = qualifySection ? (qualifySection.getBoundingClientRect().top < window.innerHeight - 60) : false;
+      stickyBar.classList.toggle('is-visible', pastHero && !formInView);
+    }
+    ticking = false;
+  }
+  function onScroll() {
+    if (!ticking) {
+      window.requestAnimationFrame(update);
+      ticking = true;
     }
   }
   window.addEventListener('scroll', onScroll, { passive: true });
-  onScroll();
+  update();
 
-  document.querySelectorAll('a[href^="#"]').forEach(function (link) {
-    link.addEventListener('click', function (e) {
-      var id = link.getAttribute('href');
-      if (!id || id === '#') return;
-      var target = document.querySelector(id);
-      if (!target) return;
-      e.preventDefault();
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  });
+  // FAQ accordion
+  function setPanel(panel, open) {
+    if (!panel) return;
+    panel.style.maxHeight = open ? panel.scrollHeight + 'px' : null;
+  }
 
-  document.querySelectorAll('[data-faq] .faq-trigger').forEach(function (btn) {
+  var faqItems = Array.prototype.slice.call(document.querySelectorAll('[data-faq] .faq-item'));
+  faqItems.forEach(function (item) {
+    var btn = item.querySelector('.faq-trigger');
+    var panel = item.querySelector('.faq-panel');
+    if (!btn) return;
     btn.addEventListener('click', function () {
-      var item = btn.closest('.faq-item');
       var isOpen = item.classList.contains('is-open');
-      document.querySelectorAll('.faq-item').forEach(function (el) {
+      faqItems.forEach(function (el) {
         el.classList.remove('is-open');
-        el.querySelector('.faq-trigger').setAttribute('aria-expanded', 'false');
-        var panel = el.querySelector('.faq-panel');
-        if (panel) panel.style.maxHeight = null;
+        var t = el.querySelector('.faq-trigger');
+        if (t) t.setAttribute('aria-expanded', 'false');
+        setPanel(el.querySelector('.faq-panel'), false);
       });
       if (!isOpen) {
         item.classList.add('is-open');
         btn.setAttribute('aria-expanded', 'true');
-        var panel = item.querySelector('.faq-panel');
-        if (panel) panel.style.maxHeight = panel.scrollHeight + 'px';
+        setPanel(panel, true);
       }
     });
   });
 
-  document.querySelectorAll('.faq-item.is-open .faq-panel').forEach(function (panel) {
-    panel.style.maxHeight = panel.scrollHeight + 'px';
-  });
+  // Keep an open FAQ panel sized correctly after viewport/orientation changes
+  var resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      var open = document.querySelector('.faq-item.is-open .faq-panel');
+      if (open) {
+        open.style.maxHeight = 'none';
+        var h = open.scrollHeight;
+        open.style.maxHeight = h + 'px';
+      }
+    }, 150);
+  }, { passive: true });
 
-  var applyForm = document.getElementById('apply-form');
-  if (applyForm) {
-    var emailInput = applyForm.querySelector('#email');
-    var emailLabel = applyForm.querySelector('label[for="email"]');
-    applyForm.querySelectorAll('input[name="contact_method"]').forEach(function (radio) {
-      radio.addEventListener('change', function () {
-        var needsEmail = radio.value === 'email' && radio.checked;
-        if (emailInput) emailInput.required = needsEmail;
-        if (emailLabel) emailLabel.textContent = needsEmail ? 'Email *' : 'Email';
-      });
-    });
-  }
+  // Open the first FAQ on load
+  var firstOpen = document.querySelector('.faq-item.is-open .faq-panel');
+  if (firstOpen) setPanel(firstOpen, true);
 
+  // Scroll reveal via IntersectionObserver (no third-party libraries)
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var reveals = Array.prototype.slice.call(document.querySelectorAll('.reveal'));
 
-  function initMotion() {
-    if (reduced) return;
+  if (reduced || !('IntersectionObserver' in window)) {
+    reveals.forEach(function (el) { el.classList.add('is-visible'); });
+    return;
+  }
 
-    if (window.Lenis) {
-      var lenis = new Lenis({ duration: 1.05, smoothWheel: true });
-      function raf(time) {
-        lenis.raf(time);
-        requestAnimationFrame(raf);
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible');
+        io.unobserve(entry.target);
       }
-      requestAnimationFrame(raf);
-    }
+    });
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.05 });
 
-    if (window.gsap && window.ScrollTrigger) {
-      document.documentElement.classList.add('js-anim');
-      gsap.registerPlugin(ScrollTrigger);
-      gsap.utils.toArray('.reveal').forEach(function (el) {
-        var inView = el.getBoundingClientRect().top < window.innerHeight * 0.92;
-        gsap.fromTo(el,
-          { opacity: 0, y: 20 },
-          {
-            opacity: 1, y: 0, duration: 0.6, ease: 'power2.out',
-            scrollTrigger: inView ? null : { trigger: el, start: 'top 90%' }
-          }
-        );
-      });
+  reveals.forEach(function (el) {
+    var rect = el.getBoundingClientRect();
+    if (rect.top < window.innerHeight) {
+      el.classList.add('is-visible'); // already in view on load — show immediately
+    } else {
+      io.observe(el);
     }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initMotion);
-  } else {
-    initMotion();
-  }
+  });
 })();
