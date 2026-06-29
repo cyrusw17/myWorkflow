@@ -73,7 +73,29 @@ Open **http://127.0.0.1:8080**
 
 ---
 
-## cPanel deploy (groundwork-web.com → public_html)
+## Git repos
+
+| Repo | Purpose |
+|------|---------|
+| [myWorkflow](https://github.com/cyrusw17/myWorkflow) | Full business workspace (this folder's parent) |
+| [offer1](https://github.com/cyrusw17/offer1) | **cPanel production deploy** — push here to go live |
+
+### Deploy to production (offer1)
+
+After changes in `mvp-website/`:
+
+```bash
+# From a separate offer1 clone, or re-init once:
+cd /path/to/offer1-clone
+# Copy/rsync from mvp-website, or cherry-pick from myWorkflow
+git add . && git commit -m "Deploy update" && git push origin main
+```
+
+Then cPanel: **Update from Remote → Deploy HEAD Commit**
+
+The parent **myWorkflow** repo is the source of truth; **offer1** is the deploy mirror for cPanel.
+
+---
 
 **Full guide:** `docs/deploy-groundwork-web.com.md`
 

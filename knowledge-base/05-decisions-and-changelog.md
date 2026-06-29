@@ -62,6 +62,11 @@
 
 ## Changelog
 
+### 2026-06-28 — myWorkflow repo created
+- Entire `Business/` folder pushed to https://github.com/cyrusw17/myWorkflow
+- `mvp-website/.git` merged into parent repo (offer1 remains separate cPanel deploy target)
+- Root `.gitignore` excludes `.env`, `vendor/`, secrets, runtime storage
+
 ### 2026-06-28 — Form-first CTA + knowledge base
 - Replaced "book a call" CTAs with application form
 - Added contact preference + best time fields
