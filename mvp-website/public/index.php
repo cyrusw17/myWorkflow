@@ -69,7 +69,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 );
                 file_put_contents(dirname(__DIR__) . '/storage/leads.log', $logLine, FILE_APPEND | LOCK_EX);
 
-                $mailTo = getenv('MAIL_TO') ?: config('email');
                 $subject = 'Launch Partner qualify: ' . $formOld['business_name'];
                 $body = implode("\n", [
                     'Launch Partner qualification form',
@@ -81,7 +80,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     '',
                     'Preferred path: Text ' . config('sms_keyword') . ' to ' . config('phone_display'),
                 ]);
-                @mail($mailTo, $subject, $body, 'From: ' . config('email'));
+                $from = config('mail_to');
+                @mail($from, $subject, $body, 'From: ' . $from);
 
                 $formSuccess = true;
                 $formOld = [];

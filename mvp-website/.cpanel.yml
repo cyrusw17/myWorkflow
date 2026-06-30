@@ -8,16 +8,17 @@ deployment:
     - export DEPLOYPATH=$HOME/public_html/
     - export APPROOT=$HOME
     - /bin/mkdir -p $APPROOT/storage
-    - /bin/cp public/index.php $DEPLOYPATH
-    - /bin/cp public/robots.txt $DEPLOYPATH
-    - /bin/cp public/sitemap.xml $DEPLOYPATH
-    - /bin/cp public/.htaccess $DEPLOYPATH
+    - /bin/cp -f public/index.php $DEPLOYPATH
+    - /bin/cp -f public/robots.txt $DEPLOYPATH
+    - /bin/cp -f public/sitemap.xml $DEPLOYPATH
+    - /bin/cp -f public/.htaccess $DEPLOYPATH
     - /bin/cp -R public/css $DEPLOYPATH
     - /bin/cp -R public/js $DEPLOYPATH
     - /bin/cp -R public/images $DEPLOYPATH
-    - /bin/cp -R config $APPROOT/config
-    - /bin/cp -R lib $APPROOT/lib
-    - /bin/cp -R includes $APPROOT/includes
+    - /bin/rm -rf $APPROOT/config $APPROOT/lib $APPROOT/includes
+    - /bin/cp -R config $APPROOT/
+    - /bin/cp -R lib $APPROOT/
+    - /bin/cp -R includes $APPROOT/
     - if [ ! -f $APPROOT/.env ]; then /bin/cp .env.example $APPROOT/.env; fi
-    - /bin/rm -f $DEPLOYPATHparking-page.shtml
+    - /bin/rm -f $DEPLOYPATH/parking-page.shtml
     - /bin/chmod 775 $APPROOT/storage

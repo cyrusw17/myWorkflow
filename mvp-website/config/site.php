@@ -5,6 +5,7 @@ return [
     'founder' => 'Cyrus',
     'tagline' => 'We build and run websites for local service businesses — so you get more customers without touching the tech.',
     'email' => getenv('SITE_EMAIL') ?: 'hello@groundwork-web.com',
+    'mail_to' => 'hello@groundwork-web.com',
     'url' => getenv('SITE_URL') ?: 'https://groundwork-web.com',
     // Live business number. Env vars can override per-environment if ever needed.
     'phone_display' => getenv('SITE_PHONE_DISPLAY') ?: '(270) 801-9780',
