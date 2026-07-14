@@ -30,26 +30,19 @@ S_{i,t} = \sum_{\tau = t-W-G}^{t-G} \hat\varepsilon_{i,\tau}
 - Skip/gap \(G \in \{0, 1, 5\}\) trading days (classic momentum lag ablation)
 
 ### Portfolio
-**Retail default (Robinhood-realistic):** long-only equal-weight sleeve of `n_hold` names (default 8).
+**Retail default (Robinhood-realistic):** long-only equal-weight within sleeves.
 
-**Quarterly stock-type selection (replaces fixed tech floor):**
-1. On each calendar quarter open, classify market regime from SPY trend + vol stress:
-   - `risk_on` — uptrend, calm vol → prefer tech / consumer / financials
-   - `recovery` — vol stress but stabilizing uptrend → financials / industrials / consumer
-   - `late_cycle` — warm trend with rising vol → energy / financials / industrials
-   - `risk_off` — downtrend or high stress → defensive / health / staples
-2. Score sleeves by relative strength vs SPY (~63d) and keep the top ~3 for that quarter
-3. Run residual-momentum **only inside the active sleeves** for the quarter
+**Technology weight (Phase 0):**
+- Split the book into a **tech sleeve** and a **non-tech sleeve**
+- Hold top residual-score tech names + top residual-score diversifiers
+- Assign a fixed portfolio weight \(w_{\mathrm{tech}} \in [0.25, 0.95]\) to the tech sleeve (swept in research); remainder to non-tech
+- Weekly rebalance
 
-**Activity:** weekly rebalance of top residual-momentum names inside the active sleeves.
-
-A *trade* is an entry (weight 0 → >0).
-
-**Research shadow book:** long top / short bottom; beta-neutralize portfolio to SPY.
+**Research selection rule:** pick \(w_{\mathrm{tech}}\) by drawdown-aware score  
+`0.55 * Calmar + 0.45 * Sharpe` (soft penalty if `|maxDD| > 25%`).
 
 ### Risk
-- Max weight per name: equal-weight ≈ 12.5% at `n_hold=8`
-- Sleeve set is re-chosen quarterly; names outside the new sleeve are rotated out first
+- Tech concentration is an explicit dial, not an accidental factor bet
 - No leverage > 1.0 in Phase 0 retail book
 
 ## Benchmark
@@ -59,6 +52,7 @@ Must beat **SPY buy-and-hold** and **vol-matched SPY** after costs on walk-forwa
 1. Residual ≈ raw momentum (no incremental edge)
 2. Residual book is closet SPY with turnover tax
 3. Crowding / capacity in microcaps that fail liquidity gates
+4. Tech weight too high → path-dependent tech drawdowns dominate
 
 ## Status
-Spec locked for Phase 0 bake-off.
+Spec locked for Phase 0 bake-off (tech-weight sweep).
