@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SITE_DATA = ROOT / "site" / "data"
 EVENTS = ROOT / "outputs" / "lsc_events.csv"
 CONF_OUT = ROOT / "outputs" / "confluence_bakeoff.json"
+V2_OUT = ROOT / "outputs" / "v1_v2_compare.json"
 
 UNIVERSE = [
     "SPY",
@@ -65,18 +66,61 @@ UNIVERSE = [
     "BA",
 ]
 
-# Locked from prior drawdown-aware tech sweep.
 BASE_TECH_WEIGHT = 0.80
-HARD_MAX_DD = 0.35  # retail survival line — reject worse
+HARD_MAX_DD = 0.35
 TOP_N_SHOW = 4
 
 
-def _curve(rets: pd.Series) -> list[dict]:
+def _curve(rets: pd.Series, step: int = 5) -> list[dict]:
+    """Equity path for charts. step>1 thins points to keep bakeoff.json small."""
     eq = equity_from_returns(rets)
+    if step > 1 and len(eq) > step * 2:
+        idxs = list(range(0, len(eq), step))
+        if idxs[-1] != len(eq) - 1:
+            idxs.append(len(eq) - 1)
+        eq = eq.iloc[idxs]
     return [
         {"date": dt.strftime("%Y-%m-%d"), "equity": round(float(val), 6)}
         for dt, val in eq.items()
     ]
+
+
+def _pair_row(sid: str, label: str, thesis: str, m1: dict, m2: dict, s1: float, s2: float) -> dict:
+    v1_key = "conf_base" if sid == "base" else f"conf_{sid}"
+    v2_key = "v2_base" if sid == "base" else f"v2_{sid}"
+    return {
+        "id": sid,
+        "label": label,
+        "thesis": thesis,
+        "v1": {
+            "score": round(s1, 6),
+            "survived": s1 > -500,
+            "cagr": m1["cagr"],
+            "sharpe": m1["sharpe"],
+            "sortino": m1["sortino"],
+            "max_dd": m1["max_dd"],
+            "calmar": m1["calmar"],
+            "curve_key": v1_key,
+        },
+        "v2": {
+            "score": round(s2, 6),
+            "survived": s2 > -500,
+            "cagr": m2["cagr"],
+            "sharpe": m2["sharpe"],
+            "sortino": m2["sortino"],
+            "max_dd": m2["max_dd"],
+            "calmar": m2["calmar"],
+            "curve_key": v2_key,
+        },
+        "delta": {
+            "score": round(s2 - s1, 6),
+            "cagr": m2["cagr"] - m1["cagr"],
+            "sharpe": m2["sharpe"] - m1["sharpe"],
+            "max_dd": m2["max_dd"] - m1["max_dd"],  # less negative is better
+            "calmar": m2["calmar"] - m1["calmar"],
+        },
+        "winner": "v2" if s2 > s1 else ("v1" if s1 > s2 else "tie"),
+    }
 
 
 def run() -> dict:
@@ -98,74 +142,109 @@ def run() -> dict:
         "tech_weight": BASE_TECH_WEIGHT,
     }
 
-    base_rets, base_stats = residual_momentum_returns(prices, **base_params)
-    # Freeze a pre-confluence equity fingerprint so confidence annotations never drift curves.
+    # --- V1 equal-weight (unchanged) ---
+    base_rets_v1, base_stats_v1 = residual_momentum_returns(
+        prices, size_by_confidence=False, **base_params
+    )
     base_curve_fingerprint = [
-        round(float(v), 8) for v in equity_from_returns(base_rets).iloc[::21].tolist()[:40]
+        round(float(v), 8) for v in equity_from_returns(base_rets_v1).iloc[::21].tolist()[:40]
     ]
-    base_metrics = summarize(base_rets, "Base Resid Mom Tech 80%")
-    base_score = survival_score(base_metrics, hard_max_dd=HARD_MAX_DD)
-    trade_log = list(base_stats.get("trade_log") or [])
-    conf_summary = dict(base_stats.get("confidence") or {})
-    print(
-        f"BASE: score={base_score:.3f} Sharpe={base_metrics['sharpe']:.2f} "
-        f"CAGR={base_metrics['cagr']:.2%} MaxDD={base_metrics['max_dd']:.2%}"
-    )
-    if conf_summary:
-        print(
-            f"TRADE CONFIDENCE (background): mean={conf_summary.get('mean')} "
-            f"median={conf_summary.get('median')} buckets={conf_summary.get('buckets')}"
-        )
 
-    rows: list[dict] = []
+    # --- V2 confidence-sized holdings ---
+    base_rets_v2, base_stats_v2 = residual_momentum_returns(
+        prices, size_by_confidence=True, **base_params
+    )
+
+    trade_log = list(base_stats_v1.get("trade_log") or [])
+    conf_summary = dict(base_stats_v1.get("confidence") or {})
+
     curves: dict[str, list[dict]] = {}
-    rets_map: dict[str, pd.Series] = {"base": base_rets}
+    pairs: list[dict] = []
 
-    # Include naked base as candidate 0
-    rows.append(
-        {
-            "id": "base",
-            "label": "Base Tech 80% (no confluence)",
-            "thesis": "Residual momentum with 80% tech long sleeve; no overlay.",
-            "score": round(base_score, 6),
-            "survived": base_score > -500,
-            "metrics": base_metrics,
-            "curve_key": "conf_base",
-        }
-    )
-    curves["conf_base"] = _curve(base_rets)
+    def _eval_family(base_rets: pd.Series, version: str) -> tuple[list[dict], dict[str, pd.Series], dict[str, list[dict]]]:
+        local_rows: list[dict] = []
+        local_rets: dict[str, pd.Series] = {"base": base_rets}
+        local_curves: dict[str, list[dict]] = {}
 
-    for conf in CONFLUENCES:
-        rets = apply_confluence(conf.id, base_rets, prices)
-        metrics = summarize(rets, conf.name)
-        score = survival_score(metrics, hard_max_dd=HARD_MAX_DD)
-        key = f"conf_{conf.id}"
-        row = {
-            "id": conf.id,
-            "label": conf.name,
-            "thesis": conf.thesis,
-            "score": round(score, 6),
-            "survived": score > -500,
-            "metrics": metrics,
-            "curve_key": key,
-        }
-        rows.append(row)
-        curves[key] = _curve(rets)
-        rets_map[conf.id] = rets
-        flag = "OK" if row["survived"] else "REJECT"
+        m0 = summarize(base_rets, f"{version} Base Tech 80%")
+        s0 = survival_score(m0, hard_max_dd=HARD_MAX_DD)
+        base_key = "conf_base" if version == "v1" else "v2_base"
+        local_rows.append(
+            {
+                "id": "base",
+                "label": "Base Tech 80% (no confluence)",
+                "thesis": "Residual momentum with 80% tech long sleeve; no overlay.",
+                "score": round(s0, 6),
+                "survived": s0 > -500,
+                "metrics": m0,
+                "curve_key": base_key,
+            }
+        )
+        local_curves[base_key] = _curve(base_rets)
+
         print(
-            f"{flag} {conf.id}: score={score:.3f} Sharpe={metrics['sharpe']:.2f} "
-            f"CAGR={metrics['cagr']:.2%} MaxDD={metrics['max_dd']:.2%}"
+            f"{version.upper()} BASE: score={s0:.3f} Sharpe={m0['sharpe']:.2f} "
+            f"CAGR={m0['cagr']:.2%} MaxDD={m0['max_dd']:.2%}"
         )
 
-    ranked = sorted(rows, key=lambda r: r["score"], reverse=True)
+        for conf in CONFLUENCES:
+            rets = apply_confluence(conf.id, base_rets, prices)
+            metrics = summarize(rets, f"{version} {conf.name}")
+            score = survival_score(metrics, hard_max_dd=HARD_MAX_DD)
+            key = f"conf_{conf.id}" if version == "v1" else f"v2_{conf.id}"
+            row = {
+                "id": conf.id,
+                "label": conf.name,
+                "thesis": conf.thesis,
+                "score": round(score, 6),
+                "survived": score > -500,
+                "metrics": metrics,
+                "curve_key": key,
+            }
+            local_rows.append(row)
+            local_curves[key] = _curve(rets)
+            local_rets[conf.id] = rets
+            flag = "OK" if row["survived"] else "REJECT"
+            print(
+                f"{version.upper()} {flag} {conf.id}: score={score:.3f} "
+                f"Sharpe={metrics['sharpe']:.2f} CAGR={metrics['cagr']:.2%} MaxDD={metrics['max_dd']:.2%}"
+            )
+        return local_rows, local_rets, local_curves
+
+    rows_v1, rets_map_v1, curves_v1 = _eval_family(base_rets_v1, "v1")
+    rows_v2, _rets_map_v2, curves_v2 = _eval_family(base_rets_v2, "v2")
+    curves.update(curves_v1)
+    curves.update(curves_v2)
+
+    # Pairwise v1 vs v2 for base + every confluence
+    by_id_v1 = {r["id"]: r for r in rows_v1}
+    by_id_v2 = {r["id"]: r for r in rows_v2}
+    for sid in ["base"] + [c.id for c in CONFLUENCES]:
+        r1 = by_id_v1[sid]
+        r2 = by_id_v2[sid]
+        pair = _pair_row(
+            sid,
+            r1["label"],
+            r1["thesis"],
+            r1["metrics"],
+            r2["metrics"],
+            r1["score"],
+            r2["score"],
+        )
+        pairs.append(pair)
+        print(
+            f"PAIR {sid}: winner={pair['winner']} Δscore={pair['delta']['score']:+.3f} "
+            f"v1DD={r1['metrics']['max_dd']:.1%} v2DD={r2['metrics']['max_dd']:.1%}"
+        )
+
+    # Rank V1 family for Strat A selection (preserve prior behavior)
+    ranked = sorted(rows_v1, key=lambda r: r["score"], reverse=True)
     for i, row in enumerate(ranked, start=1):
         row["rank"] = i
-
     survivors = [r for r in ranked if r["survived"]]
     top = (survivors or ranked)[:TOP_N_SHOW]
     best = top[0]
-    a_rets = rets_map["base" if best["id"] == "base" else best["id"]]
+    a_rets = rets_map_v1["base" if best["id"] == "base" else best["id"]]
 
     b_rets, events = lsc_proxy_returns(spy_ohlc)
     events.to_csv(EVENTS, index=False)
@@ -210,47 +289,22 @@ def run() -> dict:
         for r in top
     ]
 
-    CONF_OUT.write_text(
-        json.dumps(
-            {
-                "hard_max_dd": HARD_MAX_DD,
-                "base_tech_weight": BASE_TECH_WEIGHT,
-                "ranked": [
-                    {
-                        "rank": r["rank"],
-                        "id": r["id"],
-                        "label": r["label"],
-                        "score": r["score"],
-                        "survived": r["survived"],
-                        "max_dd": r["metrics"]["max_dd"],
-                        "sharpe": r["metrics"]["sharpe"],
-                        "cagr": r["metrics"]["cagr"],
-                    }
-                    for r in ranked
-                ],
-                "top": top_payload,
-            },
-            indent=2,
-        )
-    )
+    pairs_sorted = sorted(pairs, key=lambda p: p["v2"]["score"], reverse=True)
+    v2_wins = sum(1 for p in pairs if p["winner"] == "v2")
+    v1_wins = sum(1 for p in pairs if p["winner"] == "v1")
 
-    # Guardrail: confidence metadata must not mutate strategy returns.
+    CONF_OUT.write_text(json.dumps({"ranked_v1": ranked, "top_v1": top_payload}, indent=2, default=str))
+    V2_OUT.write_text(json.dumps({"pairs": pairs_sorted, "v1_wins": v1_wins, "v2_wins": v2_wins}, indent=2))
+
     post_fingerprint = [
-        round(float(v), 8) for v in equity_from_returns(base_rets).iloc[::21].tolist()[:40]
+        round(float(v), 8) for v in equity_from_returns(base_rets_v1).iloc[::21].tolist()[:40]
     ]
     if post_fingerprint != base_curve_fingerprint:
-        raise RuntimeError("Confidence annotation unexpectedly changed base equity curve")
+        raise RuntimeError("V1 base equity curve drifted unexpectedly")
 
     recent_trades = trade_log[-60:]
     (ROOT / "outputs" / "trade_confidence.json").write_text(
-        json.dumps(
-            {
-                "summary": conf_summary,
-                "n_trades": len(trade_log),
-                "trades": trade_log,
-            },
-            indent=2,
-        )
+        json.dumps({"summary": conf_summary, "n_trades": len(trade_log), "trades": trade_log}, indent=2)
     )
 
     payload = {
@@ -274,12 +328,10 @@ def run() -> dict:
                     "0.40*Calmar + 0.30*Sortino + 0.20*Sharpe + 0.10*CAGR_term"
                 ),
                 "confluences_tested": len(CONFLUENCES),
-                "candidates_including_base": len(rows),
+                "candidates_including_base": len(rows_v1),
                 "survivors": len(survivors),
-                "trade_confidence_note": (
-                    "Per-trade confidence is background metadata only; "
-                    "it does not change which trades are taken or equity curves."
-                ),
+                "v1_note": "Equal-weight within sleeves; confidence is diagnostic only.",
+                "v2_note": "Same names; holdings sized by confidence within each sleeve.",
             },
             "strategy_b": {
                 "note": "Daily LSC proxy until 5m/1H stack is wired",
@@ -296,31 +348,40 @@ def run() -> dict:
             "spy_vol_match": _curve(spy_vm),
             "strat_a": _curve(a_rets),
             "strat_b": _curve(b_rets),
-            # Always include the established original residual-momentum book on charts.
-            "conf_base": curves["conf_base"],
-            **{r["curve_key"]: curves[r["curve_key"]] for r in top if r["curve_key"] != "conf_base"},
+            **curves,
         },
         "confluence_bakeoff": {
             "hard_max_dd": HARD_MAX_DD,
             "catalog": catalog_meta(),
             "survivors": len(survivors),
-            "tested": len(rows),
+            "tested": len(rows_v1),
             "top": top_payload,
+        },
+        "v1_v2_compare": {
+            "method": (
+                "V1 equal-weight sleeves; V2 confidence-weighted holdings within sleeves "
+                "(same tickers / rebalance schedule / tech sleeve %). Same confluence overlays applied to both."
+            ),
+            "v1_wins": v1_wins,
+            "v2_wins": v2_wins,
+            "ties": len(pairs) - v1_wins - v2_wins,
+            "pairs": pairs_sorted,
         },
         "trade_confidence": {
             "summary": conf_summary,
             "n_trades": len(trade_log),
             "recent_trades": recent_trades,
+            "v2_summary": base_stats_v2.get("confidence"),
         },
         "lsc_event_count": int(len(events)),
         "warnings": [
             f"Base book = residual momentum @ {int(BASE_TECH_WEIGHT*100)}% tech (long-only).",
-            f"Tested {len(CONFLUENCES)} confluence overlays + base; survivors keep |MaxDD| ≤ {int(HARD_MAX_DD*100)}%.",
-            "Only the top surviving confluence strategies are charted (account-survival ranking).",
-            "Trade confidence scores are diagnostic metadata only — they do not alter trades or charts.",
+            "V1 keeps equal sleeve weights; V2 sizes holdings by confidence (same names).",
+            f"Tested {len(CONFLUENCES)} confluence overlays + base on both V1 and V2.",
+            f"Pairwise scoreboard: V2 wins {v2_wins}, V1 wins {v1_wins}.",
             "Strategy B is a daily sweep/reclaim proxy — not the full 5m ICT confluence engine yet.",
-            "Interim decision only — not live capital advice. Past DD ≠ future DD.",
-            f"Selected Strat A: {best['label']} (score={best['score']:.3f}, MaxDD={best['metrics']['max_dd']:.1%}).",
+            "Interim decision only — not live capital advice.",
+            f"Selected Strat A (from V1 survival rank): {best['label']} (score={best['score']:.3f}).",
         ],
     }
 
@@ -328,18 +389,8 @@ def run() -> dict:
     out.write_text(json.dumps(payload, indent=2))
     print(f"Wrote {out}")
     print(f"Decision (interim): {decision}")
-    print(f"Survivors: {len(survivors)}/{len(rows)} (hard MaxDD ≤ {HARD_MAX_DD:.0%})")
-    print("Top shown:")
-    for r in top:
-        m = r["metrics"]
-        print(
-            f"  #{r['rank']} {r['label']}: score={r['score']:.3f} "
-            f"Sharpe={m['sharpe']:.2f} CAGR={m['cagr']:.2%} MaxDD={m['max_dd']:.2%}"
-        )
-    for m in metrics:
-        print(
-            f"{m['name']}: Sharpe={m['sharpe']:.2f} CAGR={m['cagr']:.2%} MaxDD={m['max_dd']:.2%}"
-        )
+    print(f"V1 survivors: {len(survivors)}/{len(rows_v1)}")
+    print(f"V1 vs V2 scoreboard: v2_wins={v2_wins} v1_wins={v1_wins}")
     return payload
 
 

@@ -44,9 +44,10 @@ def _trade_confidence(
     is_tech: bool,
 ) -> dict:
     """
-    Background confidence only — never used to select/size trades.
+    Per-name confidence (0–100) plus component breakdown.
 
-    Returns 0–100 score plus component breakdown.
+    Selection always uses residual rank (unchanged). V1 ignores this for sizing;
+    V2 uses it to weight holdings within each sleeve.
     """
     s = score_row.dropna()
     if ticker not in s.index or s.empty:
@@ -133,18 +134,16 @@ def residual_momentum_returns(
     rebalance_every: int = 5,
     cost_bps: float = 5.0,
     tech_tickers: set[str] | None = None,
+    size_by_confidence: bool = False,
 ) -> tuple[pd.Series, dict]:
     """
     Long-only residual momentum with a fixed technology portfolio weight.
 
-    Each rebalance:
-      - rank residual-momentum scores for tech and non-tech sleeves
-      - hold top `n_tech` tech + top `n_other` non-tech
-      - assign total weight `tech_weight` evenly across tech names,
-        and `1 - tech_weight` evenly across non-tech names
-
-    Each entry also receives a background confidence score that does NOT
-    affect selection, sizing, or returns.
+    V1 (size_by_confidence=False): equal-weight within sleeves; confidence is
+    background metadata only.
+    V2 (size_by_confidence=True): same name selection, but within each sleeve
+    holdings are weighted by confidence, then sleeves are scaled to tech_weight
+    / (1 - tech_weight).
     """
     tech = set(tech_tickers or TECH_TICKERS)
     tech_weight = float(np.clip(tech_weight, 0.0, 1.0))
@@ -193,14 +192,40 @@ def residual_momentum_returns(
         pick_tech = tech_ranked[: min(n_tech, len(tech_ranked))]
         pick_other = other_ranked[: min(n_other, len(other_ranked))] if other_weight > 1e-12 else []
 
-        # If a sleeve is empty, spill remaining weight into the other sleeve.
+        # Confidence for every candidate (computed for both logs + optional sizing).
+        conf_map: dict[str, dict] = {}
+        for t in list(pick_tech) + list(pick_other):
+            sleeve = tech_ranked if t in tech else other_ranked
+            conf_map[t] = _trade_confidence(
+                ticker=t,
+                score_row=s,
+                sleeve_ranked=sleeve,
+                spy_px=spy_px,
+                dt=dt,
+                is_tech=t in tech,
+            )
+
+        def _sleeve_weights(names: list[str], sleeve_gross: float) -> pd.Series:
+            w = pd.Series(0.0, index=cols)
+            if not names or sleeve_gross <= 0:
+                return w
+            if not size_by_confidence:
+                w.loc[names] = sleeve_gross / len(names)
+                return w
+            # Softmax-ish via raw confidence floors so weak names still keep a stub.
+            raw = np.array([max(float(conf_map[t]["confidence"]), 5.0) for t in names], dtype=float)
+            raw = raw / raw.sum()
+            for t, wt in zip(names, raw):
+                w.loc[t] = sleeve_gross * float(wt)
+            return w
+
         new_w = pd.Series(0.0, index=cols)
         if pick_tech and tech_weight > 1e-12:
-            w = tech_weight if pick_other else 1.0
-            new_w.loc[pick_tech] = w / len(pick_tech)
+            sleeve_gross = tech_weight if pick_other else 1.0
+            new_w = new_w + _sleeve_weights(pick_tech, sleeve_gross)
         if pick_other and other_weight > 1e-12:
-            w = other_weight if pick_tech else 1.0
-            new_w.loc[pick_other] = w / len(pick_other)
+            sleeve_gross = other_weight if pick_tech else 1.0
+            new_w = new_w + _sleeve_weights(pick_other, sleeve_gross)
         if new_w.sum() <= 0:
             port.loc[dt] = 0.0
             continue
@@ -210,11 +235,10 @@ def residual_momentum_returns(
 
         for t in new_w[new_w > 0].index:
             if float(weights.get(t, 0.0)) <= 0:
-                sleeve = tech_ranked if t in tech else other_ranked
-                conf = _trade_confidence(
+                conf = conf_map.get(t) or _trade_confidence(
                     ticker=t,
                     score_row=s,
-                    sleeve_ranked=sleeve,
+                    sleeve_ranked=tech_ranked if t in tech else other_ranked,
                     spy_px=spy_px,
                     dt=dt,
                     is_tech=t in tech,
@@ -227,6 +251,7 @@ def residual_momentum_returns(
                         "weight": round(float(new_w.loc[t]), 6),
                         "confidence": conf["confidence"],
                         "confidence_components": conf["components"],
+                        "sizing": "confidence" if size_by_confidence else "equal",
                     }
                 )
 
@@ -242,8 +267,11 @@ def residual_momentum_returns(
     n_trades = len(trade_log)
     n_tech_trades = sum(1 for t in trade_log if t["is_tech"])
     conf_vals = [float(t["confidence"]) for t in trade_log]
+    version = "v2_confidence_sized" if size_by_confidence else "v1_equal_weight"
     stats = {
         "mode": "tech_weight_residual_momentum",
+        "version": version,
+        "size_by_confidence": bool(size_by_confidence),
         "tech_weight": tech_weight,
         "n_tech": n_tech,
         "n_other": n_other,
@@ -254,7 +282,11 @@ def residual_momentum_returns(
         "tech_universe": sorted(tech_cols),
         "trade_log": trade_log,
         "confidence": {
-            "note": "Background only — does not affect trade selection, sizing, or equity curves.",
+            "note": (
+                "V2 uses confidence to size holdings within sleeves."
+                if size_by_confidence
+                else "Background only on V1 — does not affect selection or equal sizing."
+            ),
             "method": (
                 "0–100 blend of sleeve rank edge, residual z-score, cross-sectional "
                 "dispersion, persistence vs median, and soft SPY regime backdrop"

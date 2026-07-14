@@ -200,6 +200,37 @@
     .warnings li { margin-bottom: 0.35rem; }
     footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
     a { color: var(--a); }
+    .pair-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.85rem;
+    }
+    @media (min-width: 900px) {
+      .pair-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .pair-card {
+      border: 1px solid var(--line);
+      background: rgba(12, 18, 16, 0.55);
+      padding: 0.75rem 0.7rem 0.55rem;
+      min-width: 0;
+    }
+    .pair-card h3 {
+      margin: 0 0 0.2rem;
+      font-size: 0.92rem;
+      color: var(--ink);
+    }
+    .pair-meta {
+      color: var(--muted);
+      font-size: 0.72rem;
+      margin-bottom: 0.45rem;
+      line-height: 1.35;
+    }
+    .pair-card .chart-box { height: 210px; }
+    @media (min-width: 720px) {
+      .pair-card .chart-box { height: 230px; }
+    }
+    .delta-up { color: var(--ok); }
+    .delta-down { color: var(--bad); }
   </style>
 </head>
 <body>
@@ -270,8 +301,37 @@
     </section>
 
     <section class="panel">
-      <h2>Trade confidence (background only)</h2>
-      <p class="hint">Diagnostic 0–100 scores attached to every residual-momentum entry. These do <em>not</em> change which trades are taken, position size, or any equity chart.</p>
+      <h2>V1 vs V2 — confidence-sized holdings</h2>
+      <p class="hint">
+        <strong>V1</strong> = equal-weight within sleeves (original). 
+        <strong>V2</strong> = same tickers/rebalance, but holdings sized by confidence.
+        Same confluence overlays applied to both. Charts are one pair each; table shows score deltas.
+      </p>
+      <div class="row" id="v2Scoreboard"></div>
+      <div style="overflow-x:auto; margin: 0.75rem 0 1rem">
+        <table id="v1v2Table">
+          <thead>
+            <tr>
+              <th>Strategy</th>
+              <th>Winner</th>
+              <th>V1 score</th>
+              <th>V2 score</th>
+              <th>Δ score</th>
+              <th>V1 MaxDD</th>
+              <th>V2 MaxDD</th>
+              <th>V1 Sharpe</th>
+              <th>V2 Sharpe</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pair-grid" id="pairGrid"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Trade confidence</h2>
+      <p class="hint">0–100 score on every residual-momentum entry. On <strong>V1</strong> it is diagnostic only (equal sleeve weights). On <strong>V2</strong> the same score sizes holdings within each sleeve. Table below is from the V1 path.</p>
       <div class="row" id="confidenceBadges"></div>
       <div style="overflow-x:auto; margin-top:0.75rem">
         <table id="confidenceTable">
@@ -686,6 +746,98 @@
       }).join("");
     }
 
+    function renderV1V2Compare(data) {
+      const block = data.v1_v2_compare || {};
+      const pairs = block.pairs || [];
+      const board = document.getElementById("v2Scoreboard");
+      const body = document.querySelector("#v1v2Table tbody");
+      const grid = document.getElementById("pairGrid");
+      if (!board || !body || !grid) return;
+
+      board.innerHTML = `
+        <div class="badge ok"><strong>V2 wins</strong> · ${block.v2_wins ?? "—"}</div>
+        <div class="badge"><strong>V1 wins</strong> · ${block.v1_wins ?? "—"}</div>
+        <div class="badge"><strong>Ties</strong> · ${block.ties ?? "—"}</div>
+        <div class="badge"><strong>Pairs</strong> · ${pairs.length}</div>
+      `;
+
+      if (!pairs.length) {
+        body.innerHTML = `<tr><td colspan="9">No V1/V2 pairs.</td></tr>`;
+        grid.innerHTML = "";
+        return;
+      }
+
+      body.innerHTML = pairs.map((p) => {
+        const dScore = Number(p.delta.score);
+        const dClass = dScore > 0 ? "delta-up" : dScore < 0 ? "delta-down" : "";
+        const fmtScore = (s, survived) => {
+          if (s == null) return "—";
+          if (survived === false || Number(s) < -500) return "REJECT";
+          return num(s);
+        };
+        return `
+          <tr>
+            <td>${p.label}</td>
+            <td><strong>${String(p.winner || "").toUpperCase()}</strong></td>
+            <td class="num">${fmtScore(p.v1.score, p.v1.survived)}</td>
+            <td class="num">${fmtScore(p.v2.score, p.v2.survived)}</td>
+            <td class="num"><strong class="${dClass}">${Math.abs(dScore) > 100 ? "survival flip" : `${dScore >= 0 ? "+" : ""}${num(dScore)}`}</strong></td>
+            <td class="num">${pct(p.v1.max_dd)}</td>
+            <td class="num">${pct(p.v2.max_dd)}</td>
+            <td class="num">${num(p.v1.sharpe)}</td>
+            <td class="num">${num(p.v2.sharpe)}</td>
+          </tr>
+        `;
+      }).join("");
+
+      grid.innerHTML = pairs.map((p, i) => {
+        const v1s = (p.v1.survived === false || Number(p.v1.score) < -500) ? "REJECT" : num(p.v1.score);
+        const v2s = (p.v2.survived === false || Number(p.v2.score) < -500) ? "REJECT" : num(p.v2.score);
+        return `
+        <div class="pair-card">
+          <h3>${p.label}</h3>
+          <div class="pair-meta">
+            Winner <strong>${String(p.winner || "").toUpperCase()}</strong>
+            · V1 ${v1s} (DD ${pct(p.v1.max_dd)})
+            · V2 ${v2s} (DD ${pct(p.v2.max_dd)})
+          </div>
+          <div class="chart-box"><canvas id="pairChart-${i}"></canvas></div>
+        </div>
+      `;
+      }).join("");
+
+      pairs.forEach((p, i) => {
+        const c1 = data.curves[p.v1.curve_key] || [];
+        const c2 = data.curves[p.v2.curve_key] || [];
+        const labels = (c1.length ? c1 : c2).map((pt) => pt.date);
+        charts.push(new Chart(document.getElementById(`pairChart-${i}`), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "V1 equal-weight",
+                data: c1.map((pt) => pt.equity),
+                borderColor: "#7aa2ff",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.75,
+              },
+              {
+                label: "V2 confidence-sized",
+                data: c2.map((pt) => pt.equity),
+                borderColor: "#3dd6c6",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2,
+              },
+            ],
+          },
+          options: chartOptions({ legend: true, maxTicks: isMobile() ? 3 : 5 }),
+        }));
+      });
+    }
+
     load()
       .then((data) => {
         const books = buildChartBooks(data);
@@ -695,6 +847,7 @@
         renderWindows(data, books);
         renderFullChart(data, books);
         renderTable(data.metrics);
+        renderV1V2Compare(data);
         renderTradeConfidence(data);
         renderWarnings(data);
       })
