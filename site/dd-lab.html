@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>V2 drawdown lab — fix MaxDD</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg0: #0c1210; --bg1: #14201c; --ink: #e8f0ec; --muted: #8aa397;
+      --line: #24352f; --a: #3dd6c6; --b: #f0a34a; --ok: #7dffb3; --bad: #f07178;
+      --v2: #c4b5fd; --spy: #7aa2ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(1100px 560px at 8% -12%, #1a3a32 0%, transparent 55%),
+        radial-gradient(800px 480px at 100% 0%, #2a2018 0%, transparent 50%),
+        var(--bg0);
+      color: var(--ink); min-height: 100vh;
+    }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem 0.9rem 3.5rem; }
+    @media (min-width: 720px) { main { padding: 2rem 1.25rem 4rem; } }
+    nav.top { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    nav.top a {
+      color: var(--a); text-decoration: none; border: 1px solid var(--line);
+      background: var(--bg1); padding: 0.35rem 0.65rem; font-size: 0.82rem;
+    }
+    nav.top a.here { color: var(--ink); border-color: #2d6b4f; }
+    h1 { font-size: clamp(1.4rem, 5vw, 2.2rem); letter-spacing: -0.03em; margin: 0 0 0.35rem; }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; max-width: 48rem; line-height: 1.45; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    .badge {
+      border: 1px solid var(--line); background: var(--bg1);
+      padding: 0.35rem 0.6rem; font-size: 0.78rem; color: var(--muted);
+    }
+    .badge strong { color: var(--ink); }
+    .badge.ok { border-color: #2d6b4f; color: var(--ok); }
+    .badge.warn { border-color: #6b4a2d; color: var(--b); }
+    .panel {
+      border: 1px solid var(--line); background: rgba(20,32,28,0.85);
+      padding: 0.85rem 0.75rem 0.7rem; margin-bottom: 1rem;
+    }
+    .panel h2 {
+      margin: 0 0 0.75rem; font-size: 0.92rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .hint { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.82rem; line-height: 1.4; }
+    .chart-box { position: relative; width: 100%; height: 340px; }
+    .chart-box.full { height: 420px; }
+    .chart-box canvas { width: 100% !important; height: 100% !important; display: block; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th, td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 500; }
+    td.num { font-variant-numeric: tabular-nums; }
+    .up { color: var(--ok); } .down { color: var(--bad); }
+    .pair-grid { display: grid; grid-template-columns: 1fr; gap: 0.85rem; }
+    @media (min-width: 900px) { .pair-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+    .pair-card {
+      border: 1px solid var(--line); background: rgba(12,18,16,0.55);
+      padding: 0.75rem 0.7rem 0.55rem; min-width: 0;
+    }
+    .pair-card h3 { margin: 0 0 0.2rem; font-size: 0.92rem; }
+    .pair-meta { color: var(--muted); font-size: 0.72rem; margin-bottom: 0.45rem; line-height: 1.35; }
+    .pair-card .chart-box { height: 210px; }
+    .warnings { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+    footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
+    a { color: var(--a); }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="top">
+      <a href="./index.html">Bake-off</a>
+      <a href="./confluence-lab.html">Confluence boost</a>
+      <a class="here" href="./dd-lab.html">V2 drawdown lab</a>
+    </nav>
+
+    <h1>V2 drawdown lab</h1>
+    <p class="sub">
+      Optimized V2 alone fails the <strong>MaxDD ≤ 35%</strong> gate (~−46%).
+      This tab bakes drawdown-control methods on that V2 base — vol targets, path brakes,
+      CPPI, circuits, combo overlays, and tighter cash buffers — and keeps only survivors.
+    </p>
+
+    <div class="row" id="badges"></div>
+
+    <section class="panel">
+      <h2>Survivors vs bare Optimized V2</h2>
+      <p class="hint" id="coreHint"></p>
+      <div class="chart-box full"><canvas id="coreChart"></canvas></div>
+      <div style="overflow-x:auto; margin-top:0.85rem">
+        <table id="topTable">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Method</th>
+              <th>Family</th>
+              <th>Score</th>
+              <th>CAGR</th>
+              <th>Sharpe</th>
+              <th>Max DD</th>
+              <th>Calmar</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>One-by-one vs bare V2</h2>
+      <p class="hint">Each survivor (or top candidates) overlaid on the rejected Optimized V2 baseline.</p>
+      <div class="pair-grid" id="pairGrid"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Near misses — closest to the 35% gate</h2>
+      <p class="hint">Rejected books with the shallowest MaxDD (useful if we soften the gate later).</p>
+      <div style="overflow-x:auto">
+        <table id="nearTable">
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>Max DD</th>
+              <th>Gap to 35%</th>
+              <th>Sharpe</th>
+              <th>CAGR</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Full method board</h2>
+      <div style="overflow-x:auto">
+        <table id="allTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Method</th>
+              <th>Family</th>
+              <th>Status</th>
+              <th>Score</th>
+              <th>Max DD</th>
+              <th>Sharpe</th>
+              <th>CAGR</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Assumptions</h2>
+      <ul class="warnings" id="warnings"></ul>
+    </section>
+
+    <footer>
+      Generated by <code>python -m src.run_dd_lab</code> ·
+      <a href="./index.html">Main bake-off</a>
+    </footer>
+  </main>
+
+  <script>
+    const pct = (x) => (Number(x) * 100).toFixed(2) + "%";
+    const num = (x) => (x == null || Number.isNaN(Number(x)) ? "—" : Number(x).toFixed(2));
+    const charts = [];
+    const isMobile = () => window.matchMedia("(max-width: 719px)").matches;
+    const COLORS = ["#3dd6c6", "#f0a34a", "#7aa2ff", "#e879a9", "#7dffb3", "#c4b5fd", "#f07178", "#a3e635"];
+
+    function chartOptions({ legend = true, maxTicks = 6 } = {}) {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: legend, labels: { color: "#8aa397", boxWidth: 10, font: { size: 11 } } } },
+        scales: {
+          x: { ticks: { color: "#8aa397", maxTicksLimit: maxTicks, maxRotation: 0 }, grid: { color: "rgba(36,53,47,0.45)" } },
+          y: { ticks: { color: "#8aa397" }, grid: { color: "rgba(36,53,47,0.45)" } },
+        },
+      };
+    }
+
+    async function load() {
+      const res = await fetch(`./data/dd_lab.json?v=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Missing dd_lab.json — run python -m src.run_dd_lab");
+      return res.json();
+    }
+
+    function render(data) {
+      const base = data.base || {};
+      const top = data.top || [];
+      const survivors = data.survivors || 0;
+      const best = data.best;
+
+      document.getElementById("badges").innerHTML = `
+        <div class="badge ok"><strong>Loaded</strong> · ${new Date(data.generated_at).toUTCString()}</div>
+        <div class="badge warn"><strong>Bare V2 MaxDD</strong> · ${pct(base.max_dd)}</div>
+        <div class="badge"><strong>Hard gate</strong> · ≤${Math.round((data.hard_max_dd||0.35)*100)}%</div>
+        <div class="badge ok"><strong>Survivors</strong> · ${survivors}/${data.methods_tested ?? "—"}</div>
+        <div class="badge"><strong>Best</strong> · ${best ? best.label : "none"}</div>
+      `;
+      document.getElementById("coreHint").textContent = base.note || "";
+
+      const body = document.querySelector("#topTable tbody");
+      const show = top.filter((r) => r.survived).length ? top.filter((r) => r.survived) : top;
+      body.innerHTML = show.map((r, i) => `
+        <tr>
+          <td>${r.rank || i + 1}</td>
+          <td>${r.label}</td>
+          <td>${r.family}</td>
+          <td class="num"><strong class="${r.survived ? "up" : "down"}">${r.survived ? num(r.score) : "REJECT"}</strong></td>
+          <td class="num">${pct(r.metrics.cagr)}</td>
+          <td class="num">${num(r.metrics.sharpe)}</td>
+          <td class="num">${pct(r.metrics.max_dd)}</td>
+          <td class="num">${num(r.metrics.calmar)}</td>
+        </tr>
+      `).join("");
+
+      const v2 = data.curves.optimized_v2 || [];
+      const labels = v2.map((p) => p.date);
+      const datasets = [
+        {
+          label: "Optimized V2 (rejected)",
+          data: v2.map((p) => p.equity),
+          borderColor: "#c4b5fd",
+          borderDash: [4, 4],
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: 1.5,
+        },
+      ];
+      show.slice(0, 6).forEach((r, i) => {
+        const c = data.curves[r.curve_key];
+        if (!c) return;
+        datasets.push({
+          label: r.label,
+          data: c.map((p) => p.equity),
+          borderColor: COLORS[i % COLORS.length],
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: i === 0 ? 2.4 : 1.7,
+        });
+      });
+      if (data.curves.spy) {
+        datasets.push({
+          label: "SPY",
+          data: data.curves.spy.map((p) => p.equity),
+          borderColor: "#7aa2ff",
+          borderDash: [2, 3],
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: 1.1,
+        });
+      }
+      charts.push(new Chart(document.getElementById("coreChart"), {
+        type: "line",
+        data: { labels, datasets },
+        options: chartOptions({ legend: true, maxTicks: isMobile() ? 3 : 6 }),
+      }));
+
+      const grid = document.getElementById("pairGrid");
+      const pairBooks = show.slice(0, 8);
+      grid.innerHTML = pairBooks.map((r, i) => `
+        <div class="pair-card">
+          <h3>${r.survived ? "#" + (r.rank || i+1) + " " : ""}${r.label}</h3>
+          <div class="pair-meta">
+            ${r.survived ? "Score " + num(r.score) : "REJECT"} · DD ${pct(r.metrics.max_dd)} · Sharpe ${num(r.metrics.sharpe)}
+            · ${r.thesis || ""}
+          </div>
+          <div class="chart-box"><canvas id="pair-${i}"></canvas></div>
+        </div>
+      `).join("");
+      pairBooks.forEach((r, i) => {
+        const c = data.curves[r.curve_key] || [];
+        charts.push(new Chart(document.getElementById(`pair-${i}`), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              { label: "Bare V2", data: v2.map((p) => p.equity), borderColor: "#c4b5fd", borderDash: [4,4], tension: 0.05, pointRadius: 0, borderWidth: 1.4 },
+              { label: r.label, data: c.map((p) => p.equity), borderColor: COLORS[i % COLORS.length], tension: 0.05, pointRadius: 0, borderWidth: 2 },
+            ],
+          },
+          options: chartOptions({ legend: true, maxTicks: isMobile() ? 3 : 5 }),
+        }));
+      });
+
+      document.querySelector("#nearTable tbody").innerHTML = (data.near_misses || []).map((r) => {
+        const gap = Math.abs(r.metrics.max_dd) - (data.hard_max_dd || 0.35);
+        return `
+          <tr>
+            <td>${r.label}</td>
+            <td class="num">${pct(r.metrics.max_dd)}</td>
+            <td class="num down">+${(gap * 100).toFixed(1)} pp</td>
+            <td class="num">${num(r.metrics.sharpe)}</td>
+            <td class="num">${pct(r.metrics.cagr)}</td>
+          </tr>`;
+      }).join("");
+
+      document.querySelector("#allTable tbody").innerHTML = (data.all || []).map((r) => `
+        <tr>
+          <td>${r.rank_all || ""}</td>
+          <td>${r.label}</td>
+          <td>${r.family}</td>
+          <td class="${r.survived ? "up" : "down"}"><strong>${r.survived ? "OK" : "REJECT"}</strong></td>
+          <td class="num">${r.survived ? num(r.score) : "REJECT"}</td>
+          <td class="num">${pct(r.metrics.max_dd)}</td>
+          <td class="num">${num(r.metrics.sharpe)}</td>
+          <td class="num">${pct(r.metrics.cagr)}</td>
+        </tr>
+      `).join("");
+
+      document.getElementById("warnings").innerHTML = (data.warnings || []).map((t) => `<li>${t}</li>`).join("");
+    }
+
+    load().then(render).catch((err) => {
+      document.getElementById("badges").innerHTML =
+        `<div class="badge warn"><strong>Failed</strong> · ${err.message}</div>`;
+    });
+    window.addEventListener("resize", () => charts.forEach((c) => c.resize()));
+  </script>
+</body>
+</html>
