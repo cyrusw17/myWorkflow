@@ -56,7 +56,7 @@
     .panel {
       border: 1px solid var(--line);
       background: rgba(20, 32, 28, 0.85);
-      padding: 1rem 1rem 0.5rem;
+      padding: 1rem 1rem 0.75rem;
       margin-bottom: 1.25rem;
     }
     .panel h2 {
@@ -67,7 +67,59 @@
       text-transform: uppercase;
       letter-spacing: 0.08em;
     }
+    .panel h3 {
+      margin: 0 0 0.35rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .panel .hint {
+      margin: 0 0 0.75rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+    .windows {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+    @media (min-width: 900px) {
+      .windows { grid-template-columns: repeat(3, 1fr); }
+    }
+    .window {
+      border: 1px solid var(--line);
+      background: rgba(12, 18, 16, 0.55);
+      padding: 0.85rem 0.75rem 0.5rem;
+      min-width: 0;
+    }
+    .window-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .window-head h3 { margin: 0; }
+    .window-range {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .returns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.35rem 0.5rem;
+      margin: 0.55rem 0 0.15rem;
+      font-size: 0.75rem;
+    }
+    .returns span { color: var(--muted); }
+    .returns strong { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .returns .up { color: var(--ok); }
+    .returns .down { color: var(--bad); }
     canvas { width: 100% !important; max-height: 420px; }
+    .window canvas { max-height: 220px; }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -94,12 +146,18 @@
     <div class="row" id="badges"></div>
 
     <section class="panel">
-      <h2>Equity curves (growth of $1)</h2>
+      <h2>Horizon windows</h2>
+      <p class="hint">Each chart is rebased to $1 at the start of the window so 3M / 6M / 1Y are visually comparable for every book.</p>
+      <div class="windows" id="windows"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Full sample equity (growth of $1)</h2>
       <canvas id="equityChart" height="140"></canvas>
     </section>
 
     <section class="panel">
-      <h2>Metrics</h2>
+      <h2>Metrics (full sample)</h2>
       <div style="overflow-x:auto">
         <table id="metricsTable">
           <thead>
@@ -133,6 +191,17 @@
   <script>
     const pct = (x) => (x * 100).toFixed(2) + "%";
     const num = (x) => (x == null ? "—" : Number(x).toFixed(2));
+    const BOOKS = [
+      { key: "spy_bh", label: "SPY B&H", color: "#7aa2ff", width: 2, dash: [] },
+      { key: "spy_vol_match", label: "SPY vol-match", color: "#c4b5fd", width: 1.5, dash: [4, 4] },
+      { key: "strat_a", label: "Strat A Residual Mom", color: "#3dd6c6", width: 2, dash: [] },
+      { key: "strat_b", label: "Strat B LSC proxy", color: "#f0a34a", width: 2, dash: [] },
+    ];
+    const WINDOWS = [
+      { id: "3m", label: "3 months", days: 91 },
+      { id: "6m", label: "6 months", days: 182 },
+      { id: "1y", label: "1 year", days: 365 },
+    ];
 
     async function load() {
       const res = await fetch("./data/bakeoff.json", { cache: "no-store" });
@@ -168,49 +237,135 @@
       `).join("");
     }
 
-    function series(points) {
+    function parseDate(s) {
+      return new Date(s + "T00:00:00Z");
+    }
+
+    function sliceWindow(points, days) {
+      if (!points || !points.length) return [];
+      const end = parseDate(points[points.length - 1].date);
+      const startMs = end.getTime() - days * 86400000;
+      const sliced = points.filter((p) => parseDate(p.date).getTime() >= startMs);
+      if (!sliced.length) return [];
+      const base = sliced[0].equity || 1;
+      return sliced.map((p) => ({
+        date: p.date,
+        equity: p.equity / base,
+      }));
+    }
+
+    function windowReturn(points) {
+      if (!points || points.length < 2) return null;
+      return points[points.length - 1].equity / points[0].equity - 1;
+    }
+
+    function chartOptions({ legend = true, maxTicks = 5 } = {}) {
       return {
-        labels: points.map(p => p.date),
-        values: points.map(p => p.equity),
+        responsive: true,
+        maintainAspectRatio: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: {
+            display: legend,
+            labels: { color: "#c5d4cc", boxWidth: 12, font: { size: 11 } },
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(3)}`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: "#8aa397", maxTicksLimit: maxTicks, maxRotation: 0 },
+            grid: { color: "rgba(36,53,47,0.6)" },
+          },
+          y: {
+            ticks: {
+              color: "#8aa397",
+              callback: (v) => Number(v).toFixed(2),
+            },
+            grid: { color: "rgba(36,53,47,0.6)" },
+          },
+        },
       };
     }
 
-    function renderChart(data) {
-      const spy = series(data.curves.spy_bh);
-      const vm = series(data.curves.spy_vol_match);
-      const a = series(data.curves.strat_a);
-      const b = series(data.curves.strat_b);
-      const labels = spy.labels;
+    function datasetsFromCurves(curves) {
+      return BOOKS.map((book) => {
+        const pts = curves[book.key] || [];
+        return {
+          label: book.label,
+          data: pts.map((p) => p.equity),
+          borderColor: book.color,
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: book.width,
+          borderDash: book.dash,
+        };
+      });
+    }
 
+    function retClass(x) {
+      if (x == null) return "";
+      return x >= 0 ? "up" : "down";
+    }
+
+    function formatRet(x) {
+      if (x == null) return "—";
+      const sign = x > 0 ? "+" : "";
+      return sign + pct(x);
+    }
+
+    function renderWindows(data) {
+      const root = document.getElementById("windows");
+      root.innerHTML = WINDOWS.map((w) => `
+        <div class="window">
+          <div class="window-head">
+            <h3>${w.label}</h3>
+            <span class="window-range" id="range-${w.id}"></span>
+          </div>
+          <canvas id="chart-${w.id}" height="160"></canvas>
+          <div class="returns" id="rets-${w.id}"></div>
+        </div>
+      `).join("");
+
+      WINDOWS.forEach((w) => {
+        const sliced = {};
+        BOOKS.forEach((book) => {
+          sliced[book.key] = sliceWindow(data.curves[book.key], w.days);
+        });
+        const labels = (sliced.spy_bh.length ? sliced.spy_bh : sliced.strat_a).map((p) => p.date);
+        const rangeEl = document.getElementById(`range-${w.id}`);
+        if (labels.length) {
+          rangeEl.textContent = `${labels[0]} → ${labels[labels.length - 1]}`;
+        }
+
+        new Chart(document.getElementById(`chart-${w.id}`), {
+          type: "line",
+          data: {
+            labels,
+            datasets: datasetsFromCurves(sliced),
+          },
+          options: chartOptions({ legend: false, maxTicks: 4 }),
+        });
+
+        document.getElementById(`rets-${w.id}`).innerHTML = BOOKS.map((book) => {
+          const r = windowReturn(sliced[book.key]);
+          return `<span>${book.label.replace("Strat ", "")}</span><strong class="${retClass(r)}">${formatRet(r)}</strong>`;
+        }).join("");
+      });
+    }
+
+    function renderFullChart(data) {
+      const labels = (data.curves.spy_bh || []).map((p) => p.date);
       new Chart(document.getElementById("equityChart"), {
         type: "line",
         data: {
           labels,
-          datasets: [
-            { label: "SPY B&H", data: spy.values, borderColor: "#7aa2ff", tension: 0.05, pointRadius: 0, borderWidth: 2 },
-            { label: "SPY vol-match", data: vm.values, borderColor: "#c4b5fd", tension: 0.05, pointRadius: 0, borderWidth: 1.5, borderDash: [4, 4] },
-            { label: "Strat A Residual Mom", data: a.values, borderColor: "#3dd6c6", tension: 0.05, pointRadius: 0, borderWidth: 2 },
-            { label: "Strat B LSC proxy", data: b.values, borderColor: "#f0a34a", tension: 0.05, pointRadius: 0, borderWidth: 2 },
-          ],
+          datasets: datasetsFromCurves(data.curves),
         },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          interaction: { mode: "index", intersect: false },
-          plugins: {
-            legend: { labels: { color: "#c5d4cc" } },
-          },
-          scales: {
-            x: {
-              ticks: { color: "#8aa397", maxTicksLimit: 8 },
-              grid: { color: "rgba(36,53,47,0.6)" },
-            },
-            y: {
-              ticks: { color: "#8aa397" },
-              grid: { color: "rgba(36,53,47,0.6)" },
-            },
-          },
-        },
+        options: chartOptions({ legend: true, maxTicks: 8 }),
       });
     }
 
@@ -230,8 +385,9 @@
     load()
       .then((data) => {
         renderBadges(data);
+        renderWindows(data);
+        renderFullChart(data);
         renderTable(data.metrics);
-        renderChart(data);
         renderWarnings(data);
       })
       .catch((err) => {
