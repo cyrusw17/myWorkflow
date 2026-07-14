@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from src.name_confluences import STACK_SIGNAL_IDS, signals_for_ticker
+
 TECH_TICKERS = {
     "XLK",
     "QQQ",
@@ -305,8 +307,21 @@ def allocate_residual_momentum(
     prepared: dict,
     size_by_confidence: bool = False,
     size_cfg: dict | None = None,
+    boost_panels: dict[str, pd.DataFrame] | None = None,
+    boost_mode: str | None = None,
+    boost_mult: float = 1.5,
+    boost_signal_id: str | None = None,
+    boost_min_count: int = 2,
 ) -> tuple[pd.Series, dict]:
-    """Turn prepared picks into a return series under V1 or V2 sizing."""
+    """
+    Turn prepared picks into a return series under V1 or V2 sizing.
+
+    Optional trade-level confluence boost:
+      - boost_mode="any": if any name confluence is True → weight × boost_mult
+      - boost_mode="stack": if ≥ boost_min_count signals True → × boost_mult
+      - boost_mode="single": only boost_signal_id gates the × boost_mult
+    After boosts, sleeve weights are renormalized to keep sleeve gross fixed.
+    """
     cols: list[str] = prepared["cols"]
     rets: pd.DataFrame = prepared["rets"]
     tech_weight = float(prepared["tech_weight"])
@@ -314,13 +329,53 @@ def allocate_residual_momentum(
     cost = float(prepared["cost_bps"]) / 10000.0
     warmup = int(prepared["warmup"])
     v2_cfg = {**DEFAULT_V2_SIZE, **(size_cfg or {})}
+    boost_on = boost_panels is not None and boost_mode in {"any", "single", "stack"}
+    boost_mult = float(max(boost_mult, 1.0))
+    min_count = int(max(boost_min_count, 1))
 
     port = pd.Series(0.0, index=prepared["prices_index"], name="residual_momentum")
     weights = pd.Series(0.0, index=cols)
     trade_log: list[dict] = []
     gross_hist: list[float] = []
+    boost_hits = 0
+    boost_checks = 0
     event_by_i = {e["i"]: e for e in prepared["events"]}
-    last_event_i = -10**9
+
+    def _apply_boost(names: list[str], base_w: pd.Series, sleeve_gross: float, dt) -> tuple[pd.Series, dict[str, bool]]:
+        nonlocal boost_hits, boost_checks
+        w = pd.Series(0.0, index=cols)
+        flags: dict[str, bool] = {}
+        if not names or sleeve_gross <= 0:
+            return w, flags
+        raw = []
+        for t in names:
+            bw = float(base_w.get(t, 0.0))
+            boosted = False
+            n_hits = 0
+            if boost_on and bw > 0:
+                boost_checks += 1
+                sigs = signals_for_ticker(boost_panels, t, dt)  # type: ignore[arg-type]
+                if boost_mode == "stack":
+                    n_hits = int(sum(1 for sid in STACK_SIGNAL_IDS if sigs.get(sid)))
+                else:
+                    n_hits = int(sum(1 for v in sigs.values() if v))
+                if boost_mode == "any":
+                    boosted = n_hits >= 1
+                elif boost_mode == "stack":
+                    boosted = n_hits >= min_count
+                elif boost_mode == "single" and boost_signal_id:
+                    boosted = bool(sigs.get(boost_signal_id, False))
+                if boosted:
+                    boost_hits += 1
+            flags[t] = boosted
+            raw.append(bw * (boost_mult if boosted else 1.0))
+        arr = np.array(raw, dtype=float)
+        if arr.sum() <= 0:
+            return w, flags
+        arr = arr / arr.sum() * sleeve_gross
+        for t, wt in zip(names, arr):
+            w.loc[t] = float(wt)
+        return w, flags
 
     for i, dt in enumerate(prepared["prices_index"]):
         if i < warmup:
@@ -332,7 +387,7 @@ def allocate_residual_momentum(
             pick_other = ev["pick_other"]
             conf_map = ev["conf_map"]
 
-            def _sleeve_weights(names: list[str], sleeve_gross: float) -> pd.Series:
+            def _base_sleeve(names: list[str], sleeve_gross: float) -> pd.Series:
                 w = pd.Series(0.0, index=cols)
                 if not names or sleeve_gross <= 0:
                     return w
@@ -342,17 +397,30 @@ def allocate_residual_momentum(
                 return _confidence_sleeve_weights(names, sleeve_gross, conf_map, cols, v2_cfg)
 
             new_w = pd.Series(0.0, index=cols)
+            boost_flags: dict[str, bool] = {}
             if pick_tech and tech_weight > 1e-12:
                 sleeve_gross = tech_weight if pick_other else 1.0
-                new_w = new_w + _sleeve_weights(pick_tech, sleeve_gross)
+                base = _base_sleeve(pick_tech, sleeve_gross)
+                if boost_on:
+                    part, flags = _apply_boost(pick_tech, base, sleeve_gross, dt)
+                    boost_flags.update(flags)
+                    new_w = new_w + part
+                else:
+                    new_w = new_w + base
             if pick_other and other_weight > 1e-12:
                 sleeve_gross = other_weight if pick_tech else 1.0
-                new_w = new_w + _sleeve_weights(pick_other, sleeve_gross)
+                base = _base_sleeve(pick_other, sleeve_gross)
+                if boost_on:
+                    part, flags = _apply_boost(pick_other, base, sleeve_gross, dt)
+                    boost_flags.update(flags)
+                    new_w = new_w + part
+                else:
+                    new_w = new_w + base
             if new_w.sum() <= 0:
                 port.loc[dt] = 0.0
-                last_event_i = i
                 continue
 
+            # Preserve relative sleeve mix; then optional V2 cash buffer on top.
             new_w = new_w / new_w.sum()
             conf_vals = [float(conf_map[t]["confidence"]) for t in new_w[new_w > 0].index]
             if size_by_confidence:
@@ -375,13 +443,14 @@ def allocate_residual_momentum(
                             "confidence_components": conf["components"],
                             "sizing": "confidence" if size_by_confidence else "equal",
                             "gross": round(float(gross), 4),
+                            "confluence_boost": bool(boost_flags.get(t, False)),
+                            "boost_mult": boost_mult if boost_flags.get(t, False) else 1.0,
                         }
                     )
 
             turnover = (new_w - weights).abs().sum() / 2.0
             port.loc[dt] = float((rets.loc[dt, cols].fillna(0.0) * new_w).sum()) - turnover * cost
             weights = new_w
-            last_event_i = i
         else:
             port.loc[dt] = float((rets.loc[dt, cols].fillna(0.0) * weights).sum())
 
@@ -392,12 +461,29 @@ def allocate_residual_momentum(
     n_trades = len(trade_log)
     n_tech_trades = sum(1 for t in trade_log if t["is_tech"])
     conf_vals = [float(t["confidence"]) for t in trade_log]
-    version = "v2_confidence_sized" if size_by_confidence else "v1_equal_weight"
+    if boost_on:
+        version = f"boost_{boost_mode}" + (f"_{boost_signal_id}" if boost_signal_id else "")
+        if size_by_confidence:
+            version = "v2_" + version
+        else:
+            version = "v1_" + version
+    else:
+        version = "v2_confidence_sized" if size_by_confidence else "v1_equal_weight"
     stats = {
         "mode": "tech_weight_residual_momentum",
         "version": version,
         "size_by_confidence": bool(size_by_confidence),
         "size_cfg": dict(v2_cfg) if size_by_confidence else None,
+        "boost": {
+            "enabled": bool(boost_on),
+            "mode": boost_mode,
+            "signal_id": boost_signal_id,
+            "mult": boost_mult,
+            "min_count": min_count if boost_mode == "stack" else None,
+            "hit_rate": (boost_hits / boost_checks) if boost_checks else None,
+            "hits": boost_hits,
+            "checks": boost_checks,
+        },
         "tech_weight": tech_weight,
         "n_tech": prepared["n_tech"],
         "n_other": prepared["n_other"],
@@ -431,7 +517,6 @@ def allocate_residual_momentum(
             },
         },
     }
-    _ = last_event_i  # reserved for future diagnostics
     return port, stats
 
 

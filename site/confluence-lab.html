@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Confluence boost lab — Resid Mom</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg0: #0c1210;
+      --bg1: #14201c;
+      --ink: #e8f0ec;
+      --muted: #8aa397;
+      --line: #24352f;
+      --a: #3dd6c6;
+      --b: #f0a34a;
+      --spy: #7aa2ff;
+      --ok: #7dffb3;
+      --bad: #f07178;
+      --v2: #c4b5fd;
+      --boost: #f0a34a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(1100px 560px at 8% -12%, #1a3a32 0%, transparent 55%),
+        radial-gradient(800px 480px at 100% 0%, #2a2418 0%, transparent 50%),
+        var(--bg0);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem 0.9rem 3.5rem; }
+    @media (min-width: 720px) { main { padding: 2rem 1.25rem 4rem; } }
+    nav.top {
+      display: flex; flex-wrap: wrap; gap: 0.55rem; align-items: center;
+      margin-bottom: 1.1rem;
+    }
+    nav.top a {
+      color: var(--a); text-decoration: none;
+      border: 1px solid var(--line); background: var(--bg1);
+      padding: 0.35rem 0.65rem; font-size: 0.82rem;
+    }
+    nav.top a:hover { border-color: var(--a); }
+    nav.top a.here { color: var(--ink); border-color: #2d6b4f; }
+    h1 {
+      font-size: clamp(1.4rem, 5vw, 2.2rem);
+      letter-spacing: -0.03em; margin: 0 0 0.35rem; font-weight: 700;
+    }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; max-width: 46rem; line-height: 1.45; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    .badge {
+      border: 1px solid var(--line); background: var(--bg1);
+      padding: 0.35rem 0.6rem; font-size: 0.78rem; color: var(--muted);
+    }
+    .badge strong { color: var(--ink); font-weight: 600; }
+    .badge.ok { border-color: #2d6b4f; color: var(--ok); }
+    .badge.warn { border-color: #6b4a2d; color: var(--b); }
+    .panel {
+      border: 1px solid var(--line); background: rgba(20, 32, 28, 0.85);
+      padding: 0.85rem 0.75rem 0.7rem; margin-bottom: 1rem; overflow: hidden;
+    }
+    @media (min-width: 720px) { .panel { padding: 1rem 1rem 0.75rem; } }
+    .panel h2 {
+      margin: 0 0 0.75rem; font-size: 0.92rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .hint { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.82rem; line-height: 1.4; }
+    .chart-box { position: relative; width: 100%; height: 320px; }
+    .chart-box.full { height: 400px; }
+    @media (min-width: 720px) {
+      .chart-box { height: 340px; }
+      .chart-box.full { height: 440px; }
+    }
+    .chart-box canvas { width: 100% !important; height: 100% !important; display: block; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 500; }
+    td.num { font-variant-numeric: tabular-nums; }
+    .up { color: var(--ok); }
+    .down { color: var(--bad); }
+    .pair-grid {
+      display: grid; grid-template-columns: 1fr; gap: 0.85rem;
+    }
+    @media (min-width: 900px) {
+      .pair-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .pair-card {
+      border: 1px solid var(--line); background: rgba(12, 18, 16, 0.55);
+      padding: 0.75rem 0.7rem 0.55rem; min-width: 0;
+    }
+    .pair-card h3 { margin: 0 0 0.2rem; font-size: 0.92rem; }
+    .pair-meta { color: var(--muted); font-size: 0.72rem; margin-bottom: 0.45rem; line-height: 1.35; }
+    .pair-card .chart-box { height: 200px; }
+    footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
+    a { color: var(--a); }
+    .warnings { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="top">
+      <a href="./index.html">← Bake-off dashboard</a>
+      <a class="here" href="./confluence-lab.html">Confluence boost lab</a>
+    </nav>
+
+    <h1>Confluence boost lab</h1>
+    <p class="sub">
+      Original residual momentum, optimized V2 confidence sizing, and trade-level
+      confluence boosts (invest <strong>1.5×</strong> when a selected name also clears
+      extra confluence signals).
+    </p>
+
+    <div class="row" id="badges"></div>
+
+    <section class="panel">
+      <h2>Core books — original · optimized V2 · confluence boost</h2>
+      <p class="hint" id="coreHint"></p>
+      <div class="chart-box full"><canvas id="coreChart"></canvas></div>
+      <div style="overflow-x:auto; margin-top:0.85rem">
+        <table id="coreTable">
+          <thead>
+            <tr>
+              <th>Book</th>
+              <th>Score</th>
+              <th>CAGR</th>
+              <th>Sharpe</th>
+              <th>Max DD</th>
+              <th>Calmar</th>
+              <th>Boost hit</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Confluence tests — 1.5× only when that signal fires</h2>
+      <p class="hint">
+        Same original residual-momentum names. For each name-level confluence, size that name ×1.5 when the signal is true (lag-1), then renormalize the sleeve. Ranked by survival score.
+      </p>
+      <div class="row" id="testBadges"></div>
+      <div style="overflow-x:auto; margin: 0.5rem 0 1rem">
+        <table id="testTable">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Confluence</th>
+              <th>Score</th>
+              <th>Δ vs original</th>
+              <th>Hit rate</th>
+              <th>Sharpe</th>
+              <th>Max DD</th>
+              <th>CAGR</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pair-grid" id="testGrid"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Recent boosted trades</h2>
+      Recent entries from the stacked-confluence ×1.5 book where the boost fired (≥2 curated signals).
+      <div style="overflow-x:auto">
+        <table id="tradeTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Ticker</th>
+              <th>Sleeve</th>
+              <th>Weight</th>
+              <th>Confidence</th>
+              <th>Boost</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Assumptions</h2>
+      <ul class="warnings" id="warnings"></ul>
+    </section>
+
+    <footer>
+      Generated by <code>python -m src.run_confluence_lab</code> ·
+      <a href="./index.html">Main bake-off</a>
+    </footer>
+  </main>
+
+  <script>
+    const pct = (x) => (x * 100).toFixed(2) + "%";
+    const num = (x) => (x == null || Number.isNaN(Number(x)) ? "—" : Number(x).toFixed(2));
+    const charts = [];
+    const isMobile = () => window.matchMedia("(max-width: 719px)").matches;
+
+    function chartOptions({ legend = true, maxTicks = 6 } = {}) {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: legend, labels: { color: "#8aa397", boxWidth: 10, font: { size: 11 } } },
+        },
+        scales: {
+          x: {
+            ticks: { color: "#8aa397", maxTicksLimit: maxTicks, maxRotation: 0, autoSkip: true },
+            grid: { color: "rgba(36,53,47,0.45)" },
+          },
+          y: {
+            ticks: { color: "#8aa397" },
+            grid: { color: "rgba(36,53,47,0.45)" },
+          },
+        },
+      };
+    }
+
+    async function load() {
+      const res = await fetch(`./data/confluence_lab.json?v=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Missing confluence_lab.json — run python -m src.run_confluence_lab");
+      return res.json();
+    }
+
+    function renderCore(data) {
+      const books = data.core_books || [];
+      const colors = {
+        original: "#7dffb3",
+        optimized_v2: "#c4b5fd",
+        boost_any: "#f0a34a",
+        v2_boost_any: "#3dd6c6",
+        spy: "#7aa2ff",
+      };
+      document.getElementById("coreHint").textContent =
+        (data.method && data.method.boost) || "";
+
+      const badges = document.getElementById("badges");
+      const winner = books.find((b) => b.key === data.core_winner) || books[0];
+      badges.innerHTML = `
+        <div class="badge ok"><strong>Loaded</strong> · ${new Date(data.generated_at).toUTCString()}</div>
+        <div class="badge"><strong>Boost</strong> · ×${data.boost_mult ?? 1.5}</div>
+        <div class="badge"><strong>Stack rule</strong> · ≥${(data.boost_rule && data.boost_rule.min_count) || 2} curated signals</div>
+        <div class="badge ok"><strong>Core winner</strong> · ${winner ? winner.label : "—"}</div>
+        <div class="badge"><strong>V2 avg gross</strong> · ${num((books.find(b => b.key==="optimized_v2")||{}).avg_gross)}</div>
+      `;
+
+      const body = document.querySelector("#coreTable tbody");
+      body.innerHTML = books.map((b) => {
+        const scoreTxt = b.survived === false || b.score < -500 ? "REJECT" : num(b.score);
+        return `
+          <tr>
+            <td>${b.label}${b.key === data.core_winner ? " ★" : ""}</td>
+            <td class="num"><strong>${scoreTxt}</strong></td>
+            <td class="num">${pct(b.metrics.cagr)}</td>
+            <td class="num">${num(b.metrics.sharpe)}</td>
+            <td class="num">${pct(b.metrics.max_dd)}</td>
+            <td class="num">${num(b.metrics.calmar)}</td>
+            <td class="num">${b.boost_hit_rate != null ? pct(b.boost_hit_rate) : "—"}</td>
+          </tr>`;
+      }).join("");
+
+      const keys = ["original", "optimized_v2", "boost_any", "v2_boost_any"];
+      const base = (data.curves.original || data.curves.spy || []);
+      const labels = base.map((p) => p.date);
+      const datasets = keys
+        .filter((k) => data.curves[k])
+        .map((k) => {
+          const book = books.find((b) => b.key === k);
+          return {
+            label: book ? book.label : k,
+            data: data.curves[k].map((p) => p.equity),
+            borderColor: colors[k] || "#fff",
+            tension: 0.05,
+            pointRadius: 0,
+            borderWidth: k === data.core_winner ? 2.4 : 1.7,
+          };
+        });
+      if (data.curves.spy) {
+        datasets.push({
+          label: "SPY",
+          data: data.curves.spy.map((p) => p.equity),
+          borderColor: colors.spy,
+          borderDash: [4, 4],
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: 1.25,
+        });
+      }
+      charts.push(new Chart(document.getElementById("coreChart"), {
+        type: "line",
+        data: { labels, datasets },
+        options: chartOptions({ legend: true, maxTicks: isMobile() ? 3 : 6 }),
+      }));
+    }
+
+    function renderTests(data) {
+      const tests = data.confluence_tests || [];
+      const tb = document.getElementById("testBadges");
+      const best = tests[0];
+      tb.innerHTML = `
+        <div class="badge ok"><strong>Best signal</strong> · ${best ? best.confluence_name : "—"}</div>
+        <div class="badge"><strong>Signals tested</strong> · ${tests.length}</div>
+        <div class="badge"><strong>Survivors</strong> · ${tests.filter(t => t.survived).length}</div>
+      `;
+
+      document.querySelector("#testTable tbody").innerHTML = tests.map((t) => {
+        const d = Number(t.delta_vs_original?.score || 0);
+        const dClass = d > 0 ? "up" : d < 0 ? "down" : "";
+        const scoreTxt = t.survived === false || t.score < -500 ? "REJECT" : num(t.score);
+        return `
+          <tr>
+            <td>${t.rank}</td>
+            <td>${t.confluence_name}</td>
+            <td class="num"><strong>${scoreTxt}</strong></td>
+            <td class="num"><strong class="${dClass}">${d >= 0 ? "+" : ""}${Math.abs(d) > 100 ? "flip" : num(d)}</strong></td>
+            <td class="num">${t.boost_hit_rate != null ? pct(t.boost_hit_rate) : "—"}</td>
+            <td class="num">${num(t.metrics.sharpe)}</td>
+            <td class="num">${pct(t.metrics.max_dd)}</td>
+            <td class="num">${pct(t.metrics.cagr)}</td>
+          </tr>`;
+      }).join("");
+
+      const grid = document.getElementById("testGrid");
+      const orig = data.curves.original || [];
+      grid.innerHTML = tests.map((t, i) => `
+        <div class="pair-card">
+          <h3>#${t.rank} ${t.confluence_name}</h3>
+          <div class="pair-meta">
+            Score ${t.survived ? num(t.score) : "REJECT"}
+            · DD ${pct(t.metrics.max_dd)}
+            · hit ${t.boost_hit_rate != null ? pct(t.boost_hit_rate) : "—"}
+            · ${t.thesis || ""}
+          </div>
+          <div class="chart-box"><canvas id="testChart-${i}"></canvas></div>
+        </div>
+      `).join("");
+
+      tests.forEach((t, i) => {
+        const c = data.curves[t.curve_key] || [];
+        const labels = (orig.length ? orig : c).map((p) => p.date);
+        charts.push(new Chart(document.getElementById(`testChart-${i}`), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "Original RM",
+                data: orig.map((p) => p.equity),
+                borderColor: "#7dffb3",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.5,
+              },
+              {
+                label: `×${data.boost_mult || 1.5} ${t.confluence_name}`,
+                data: c.map((p) => p.equity),
+                borderColor: "#f0a34a",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2,
+              },
+            ],
+          },
+          options: chartOptions({ legend: true, maxTicks: isMobile() ? 3 : 5 }),
+        }));
+      });
+    }
+
+    function renderTrades(data) {
+      const trades = data.recent_boosted_trades || [];
+      const body = document.querySelector("#tradeTable tbody");
+      if (!trades.length) {
+        body.innerHTML = `<tr><td colspan="6">No boosted trades logged.</td></tr>`;
+        return;
+      }
+      body.innerHTML = trades.map((t) => `
+        <tr>
+          <td>${t.date}</td>
+          <td>${t.ticker}</td>
+          <td>${t.is_tech ? "tech" : "other"}</td>
+          <td class="num">${t.weight != null ? (100 * Number(t.weight)).toFixed(1) + "%" : "—"}</td>
+          <td class="num">${num(t.confidence)}</td>
+          <td class="num"><strong class="up">×${num(t.boost_mult)}</strong></td>
+        </tr>
+      `).join("");
+    }
+
+    function renderWarnings(data) {
+      const items = [
+        data.method?.original,
+        data.method?.optimized_v2,
+        data.method?.boost,
+        ...(data.warnings || []),
+      ].filter(Boolean);
+      document.getElementById("warnings").innerHTML = items.map((t) => `<li>${t}</li>`).join("");
+    }
+
+    load()
+      .then((data) => {
+        renderCore(data);
+        renderTests(data);
+        renderTrades(data);
+        renderWarnings(data);
+      })
+      .catch((err) => {
+        document.getElementById("badges").innerHTML =
+          `<div class="badge warn"><strong>Failed to load</strong> · ${err.message}</div>`;
+      });
+
+    window.addEventListener("resize", () => charts.forEach((c) => c.resize()));
+  </script>
+</body>
+</html>
