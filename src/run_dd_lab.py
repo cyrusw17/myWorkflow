@@ -71,7 +71,8 @@ TIGHT_V2_CFGS: list[dict] = [
 ]
 
 
-def _curve(rets, step: int = 5) -> list[dict]:
+def _curve(rets, step: int = 1) -> list[dict]:
+    """Daily equity by default so 1M/3M windows stay readable."""
     eq = equity_from_returns(rets)
     if step > 1 and len(eq) > step * 2:
         idxs = list(range(0, len(eq), step))

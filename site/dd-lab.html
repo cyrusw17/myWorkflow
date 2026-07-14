@@ -51,6 +51,36 @@
     .chart-box { position: relative; width: 100%; height: 340px; }
     .chart-box.full { height: 420px; }
     .chart-box canvas { width: 100% !important; height: 100% !important; display: block; }
+    .windows { display: grid; grid-template-columns: 1fr; gap: 0.85rem; }
+    @media (min-width: 960px) { .windows { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; } }
+    .window {
+      border: 1px solid var(--line); background: rgba(12, 18, 16, 0.55);
+      padding: 0.75rem 0.65rem 0.55rem; min-width: 0;
+    }
+    .window-head {
+      display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 0.45rem;
+    }
+    @media (min-width: 960px) {
+      .window-head { flex-direction: row; justify-content: space-between; align-items: baseline; }
+    }
+    .window-head h3 { margin: 0; font-size: 0.95rem; color: var(--ink); }
+    .window-range { color: var(--muted); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+    .window .chart-box { height: 230px; }
+    @media (min-width: 720px) { .window .chart-box { height: 250px; } }
+    .returns {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.3rem 0.65rem; margin: 0.65rem 0 0.1rem; font-size: 0.72rem;
+    }
+    .returns span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .returns strong { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .legend-row {
+      display: flex; flex-wrap: wrap; gap: 0.45rem 0.85rem;
+      margin: 0 0 0.85rem; font-size: 0.75rem; color: var(--muted);
+    }
+    .legend-row i {
+      display: inline-block; width: 0.85rem; height: 0.2rem;
+      margin-right: 0.35rem; vertical-align: middle; border-radius: 1px;
+    }
     table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
     th, td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-weight: 500; }
@@ -86,6 +116,13 @@
     </p>
 
     <div class="row" id="badges"></div>
+
+    <section class="panel">
+      <h2>Horizon windows — 1M · 3M · 6M</h2>
+      <p class="hint">Each chart is rebased to $1 at the start of the window. Bare Optimized V2 vs top drawdown-control survivors vs SPY.</p>
+      <div class="legend-row" id="sharedLegend"></div>
+      <div class="windows" id="windows"></div>
+    </section>
 
     <section class="panel">
       <h2>Survivors vs bare Optimized V2</h2>
@@ -173,6 +210,36 @@
     const charts = [];
     const isMobile = () => window.matchMedia("(max-width: 719px)").matches;
     const COLORS = ["#3dd6c6", "#f0a34a", "#7aa2ff", "#e879a9", "#7dffb3", "#c4b5fd", "#f07178", "#a3e635"];
+    const WINDOWS = [
+      { id: "1m", label: "1 month", days: 31 },
+      { id: "3m", label: "3 months", days: 91 },
+      { id: "6m", label: "6 months", days: 182 },
+    ];
+
+    function parseDate(s) {
+      const [y, m, d] = s.split("-").map(Number);
+      return new Date(Date.UTC(y, m - 1, d));
+    }
+
+    function sliceWindow(points, days) {
+      if (!points || !points.length) return [];
+      const end = parseDate(points[points.length - 1].date);
+      const startMs = end.getTime() - days * 86400000;
+      const sliced = points.filter((p) => parseDate(p.date).getTime() >= startMs);
+      if (!sliced.length) return [];
+      const base = sliced[0].equity || 1;
+      return sliced.map((p) => ({ date: p.date, equity: p.equity / base }));
+    }
+
+    function windowReturn(points) {
+      if (!points || points.length < 2) return null;
+      return points[points.length - 1].equity / points[0].equity - 1;
+    }
+
+    function formatRet(x) {
+      if (x == null) return "—";
+      return (x > 0 ? "+" : "") + pct(x);
+    }
 
     function chartOptions({ legend = true, maxTicks = 6 } = {}) {
       return {
@@ -187,10 +254,79 @@
       };
     }
 
+    function buildWindowBooks(data) {
+      const top = (data.top || []).filter((r) => r.survived);
+      const books = [
+        { key: "spy", label: "SPY", color: "#7aa2ff", width: 1.25, dash: [4, 4] },
+        { key: "optimized_v2", label: "Bare V2", color: "#c4b5fd", width: 1.5, dash: [4, 4] },
+      ];
+      top.slice(0, 4).forEach((r, i) => {
+        books.push({
+          key: r.curve_key,
+          label: `#${r.rank || i + 1} ${r.label.replace(/^V2 \+ /, "")}`,
+          color: COLORS[i % COLORS.length],
+          width: i === 0 ? 2.2 : 1.6,
+          dash: [],
+        });
+      });
+      return books;
+    }
+
     async function load() {
       const res = await fetch(`./data/dd_lab.json?v=${Date.now()}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Missing dd_lab.json — run python -m src.run_dd_lab");
       return res.json();
+    }
+
+    function renderWindows(data, books) {
+      document.getElementById("sharedLegend").innerHTML = books.map((b) =>
+        `<span><i style="background:${b.color}"></i>${b.label}</span>`
+      ).join("");
+
+      const root = document.getElementById("windows");
+      root.innerHTML = WINDOWS.map((w) => `
+        <div class="window">
+          <div class="window-head">
+            <h3>${w.label}</h3>
+            <span class="window-range" id="range-${w.id}"></span>
+          </div>
+          <div class="chart-box"><canvas id="chart-${w.id}"></canvas></div>
+          <div class="returns" id="rets-${w.id}"></div>
+        </div>
+      `).join("");
+
+      WINDOWS.forEach((w) => {
+        const sliced = {};
+        books.forEach((book) => {
+          sliced[book.key] = sliceWindow(data.curves[book.key], w.days);
+        });
+        const labels = (sliced.spy && sliced.spy.length ? sliced.spy : (sliced.optimized_v2 || [])).map((p) => p.date);
+        const rangeEl = document.getElementById(`range-${w.id}`);
+        if (labels.length) rangeEl.textContent = `${labels[0]} → ${labels[labels.length - 1]}`;
+
+        charts.push(new Chart(document.getElementById(`chart-${w.id}`), {
+          type: "line",
+          data: {
+            labels,
+            datasets: books.map((book) => ({
+              label: book.label,
+              data: (sliced[book.key] || []).map((p) => p.equity),
+              borderColor: book.color,
+              tension: 0.05,
+              pointRadius: 0,
+              borderWidth: book.width,
+              borderDash: book.dash || [],
+            })),
+          },
+          options: chartOptions({ legend: false, maxTicks: isMobile() ? 3 : 4 }),
+        }));
+
+        document.getElementById(`rets-${w.id}`).innerHTML = books.map((book) => {
+          const r = windowReturn(sliced[book.key]);
+          const klass = r == null ? "" : (r >= 0 ? "up" : "down");
+          return `<span>${book.label}</span><strong class="${klass}">${formatRet(r)}</strong>`;
+        }).join("");
+      });
     }
 
     function render(data) {
@@ -198,6 +334,8 @@
       const top = data.top || [];
       const survivors = data.survivors || 0;
       const best = data.best;
+      const windowBooks = buildWindowBooks(data);
+      renderWindows(data, windowBooks);
 
       document.getElementById("badges").innerHTML = `
         <div class="badge ok"><strong>Loaded</strong> · ${new Date(data.generated_at).toUTCString()}</div>
