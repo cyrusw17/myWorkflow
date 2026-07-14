@@ -24,7 +24,7 @@ That single prompt is the operating system for the agent: research protocol, str
 ## Repo layout
 
 ```
-ai-agent/
+.
 ├── README.md
 ├── prompts/
 │   └── MASTER_PROMPT_quant_agent.md   ← paste this into a new AI session
@@ -35,11 +35,9 @@ ai-agent/
     └── research-protocol.md
 ```
 
-## Target GitHub home
+## GitHub
 
-Intended home: **`github.com/cyrus2005/ai-agent`**
-
-This copy currently lives under the Groundwork workflow repo until you create/push the standalone repo.
+**https://github.com/cyrusw17/ai-agent**
 
 ## Non-negotiables
 
