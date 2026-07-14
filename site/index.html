@@ -301,13 +301,15 @@
     </section>
 
     <section class="panel">
-      <h2>V1 vs V2 — confidence-sized holdings</h2>
+      <h2>V1 vs V2 — optimized confidence sizing</h2>
       <p class="hint">
-        <strong>V1</strong> = equal-weight within sleeves (original). 
-        <strong>V2</strong> = same tickers/rebalance, but holdings sized by confidence.
-        Same confluence overlays applied to both. Charts are one pair each; table shows score deltas.
+        <strong>V1</strong> = equal-weight sleeves (frozen).
+        <strong>V2</strong> = re-optimized mapping from confidence → portfolio:
+        mild shrink-to-equal tilt + cash buffer when mean confidence is weak.
+        Same confluence overlays. Charts are one pair each.
       </p>
       <div class="row" id="v2Scoreboard"></div>
+      <p class="hint" id="v2SizeHint" style="margin-top:0"></p>
       <div style="overflow-x:auto; margin: 0.75rem 0 1rem">
         <table id="v1v2Table">
           <thead>
@@ -331,7 +333,7 @@
 
     <section class="panel">
       <h2>Trade confidence</h2>
-      <p class="hint">0–100 score on every residual-momentum entry. On <strong>V1</strong> it is diagnostic only (equal sleeve weights). On <strong>V2</strong> the same score sizes holdings within each sleeve. Table below is from the V1 path.</p>
+      <p class="hint">0–100 score on every residual-momentum entry. On <strong>V1</strong> it is diagnostic only. On <strong>V2</strong> it drives a mild within-sleeve tilt and scales gross exposure (cash when conviction is weak). Table below is from the V1 path.</p>
       <div class="row" id="confidenceBadges"></div>
       <div style="overflow-x:auto; margin-top:0.75rem">
         <table id="confidenceTable">
@@ -759,7 +761,15 @@
         <div class="badge"><strong>V1 wins</strong> · ${block.v1_wins ?? "—"}</div>
         <div class="badge"><strong>Ties</strong> · ${block.ties ?? "—"}</div>
         <div class="badge"><strong>Pairs</strong> · ${pairs.length}</div>
+        <div class="badge"><strong>V2 avg gross</strong> · ${block.v2_avg_gross != null ? Number(block.v2_avg_gross).toFixed(2) : "—"}</div>
       `;
+      const hint = document.getElementById("v2SizeHint");
+      if (hint) {
+        const cfg = block.v2_size_cfg || {};
+        hint.textContent = block.method
+          ? `${block.method} Locked cfg: shrink=${cfg.shrink ?? "—"}, power=${cfg.power ?? "—"}, gross_floor=${cfg.gross_floor ?? "—"}, conf ${cfg.conf_lo ?? "—"}–${cfg.conf_hi ?? "—"}.`
+          : "";
+      }
 
       if (!pairs.length) {
         body.innerHTML = `<tr><td colspan="9">No V1/V2 pairs.</td></tr>`;
@@ -824,7 +834,7 @@
                 borderWidth: 1.75,
               },
               {
-                label: "V2 confidence-sized",
+                label: "V2 optimized",
                 data: c2.map((pt) => pt.equity),
                 borderColor: "#3dd6c6",
                 tension: 0.05,

@@ -122,7 +122,90 @@ def _trade_confidence(
     }
 
 
-def residual_momentum_returns(
+# Locked after Stage-A/B + local refine sweeps (src/optimize_v2.py).
+# Key finding: retail survival is driven by confidence → cash buffer + mild
+# shrink-to-equal, NOT aggressive name overweighting.
+DEFAULT_V2_SIZE: dict = {
+    "power": 0.25,
+    "shrink": 0.90,
+    "floor": 12.0,
+    "max_name_frac": 0.35,
+    "gross_mode": "conf_mean",
+    "gross_floor": 0.35,
+    "gross_ceil": 1.0,
+    "conf_lo": 52.0,
+    "conf_hi": 78.0,
+}
+
+
+def _confidence_sleeve_weights(
+    names: list[str],
+    sleeve_gross: float,
+    conf_map: dict[str, dict],
+    cols: list[str],
+    size_cfg: dict,
+) -> pd.Series:
+    """Map confidence → sleeve weights with shrink, power tilt, and name caps."""
+    w = pd.Series(0.0, index=cols)
+    if not names or sleeve_gross <= 0:
+        return w
+
+    n = len(names)
+    equal = np.full(n, 1.0 / n, dtype=float)
+    floor = float(size_cfg.get("floor", 5.0))
+    power = float(size_cfg.get("power", 1.0))
+    shrink = float(np.clip(size_cfg.get("shrink", 0.0), 0.0, 1.0))
+    max_frac = float(np.clip(size_cfg.get("max_name_frac", 1.0), 1.0 / n, 1.0))
+
+    raw = np.array(
+        [max(float(conf_map[t]["confidence"]), floor) ** power for t in names],
+        dtype=float,
+    )
+    if raw.sum() <= 0:
+        tilt = equal.copy()
+    else:
+        tilt = raw / raw.sum()
+
+    # Blend toward equal weight (James–Stein style), then enforce concentration cap.
+    mix = (1.0 - shrink) * tilt + shrink * equal
+    mix = mix / mix.sum()
+
+    # Cap oversized names; redistribute residual to names under the cap.
+    for _ in range(8):
+        over = mix > max_frac + 1e-12
+        if not over.any():
+            break
+        excess = float((mix[over] - max_frac).sum())
+        mix[over] = max_frac
+        under = ~over
+        if not under.any() or mix[under].sum() <= 0:
+            break
+        mix[under] = mix[under] + excess * (mix[under] / mix[under].sum())
+
+    mix = mix / mix.sum()
+    for t, wt in zip(names, mix):
+        w.loc[t] = sleeve_gross * float(wt)
+    return w
+
+
+def _gross_from_confidence(conf_vals: list[float], size_cfg: dict) -> float:
+    """Scale book exposure down when average confidence is weak (cash buffer)."""
+    mode = str(size_cfg.get("gross_mode", "full"))
+    lo_g = float(size_cfg.get("gross_floor", 1.0))
+    hi_g = float(size_cfg.get("gross_ceil", 1.0))
+    if mode == "full" or not conf_vals:
+        return 1.0
+    mean_c = float(np.mean(conf_vals))
+    if mode == "conf_mean":
+        conf_lo = float(size_cfg.get("conf_lo", 40.0))
+        conf_hi = float(size_cfg.get("conf_hi", 75.0))
+        span = max(conf_hi - conf_lo, 1e-9)
+        t = _clip01((mean_c - conf_lo) / span)
+        return float(lo_g + t * (hi_g - lo_g))
+    return 1.0
+
+
+def prepare_residual_momentum(
     prices: pd.DataFrame,
     spy_col: str = "SPY",
     lookback_beta: int = 90,
@@ -134,16 +217,11 @@ def residual_momentum_returns(
     rebalance_every: int = 5,
     cost_bps: float = 5.0,
     tech_tickers: set[str] | None = None,
-    size_by_confidence: bool = False,
-) -> tuple[pd.Series, dict]:
+) -> dict:
     """
-    Long-only residual momentum with a fixed technology portfolio weight.
+    Precompute residual scores + per-rebalance picks/confidence.
 
-    V1 (size_by_confidence=False): equal-weight within sleeves; confidence is
-    background metadata only.
-    V2 (size_by_confidence=True): same name selection, but within each sleeve
-    holdings are weighted by confidence, then sleeves are scaled to tech_weight
-    / (1 - tech_weight).
+    Selection is identical for V1/V2; only sizing differs downstream.
     """
     tech = set(tech_tickers or TECH_TICKERS)
     tech_weight = float(np.clip(tech_weight, 0.0, 1.0))
@@ -169,30 +247,22 @@ def residual_momentum_returns(
 
     resid = rets[cols] - betas.mul(spy, axis=0)
     score = resid.shift(skip).rolling(formation).sum()
-
-    port = pd.Series(0.0, index=prices.index, name="residual_momentum")
-    weights = pd.Series(0.0, index=cols)
-    cost = cost_bps / 10000.0
-    trade_log: list[dict] = []
     warmup = lookback_beta + formation + skip + 1
-    last_reb = -10**9
 
+    events: list[dict] = []
+    last_reb = -10**9
     for i, dt in enumerate(prices.index):
         if i < warmup:
             continue
-
         if (i - last_reb) < rebalance_every:
-            port.loc[dt] = float((rets.loc[dt, cols].fillna(0.0) * weights).sum())
             continue
 
         s = score.loc[dt].dropna()
         tech_ranked = [t for t in _ranked(s) if t in tech_cols]
         other_ranked = [t for t in _ranked(s) if t in other_cols]
-
         pick_tech = tech_ranked[: min(n_tech, len(tech_ranked))]
         pick_other = other_ranked[: min(n_other, len(other_ranked))] if other_weight > 1e-12 else []
 
-        # Confidence for every candidate (computed for both logs + optional sizing).
         conf_map: dict[str, dict] = {}
         for t in list(pick_tech) + list(pick_other):
             sleeve = tech_ranked if t in tech else other_ranked
@@ -204,61 +274,116 @@ def residual_momentum_returns(
                 dt=dt,
                 is_tech=t in tech,
             )
+        events.append(
+            {
+                "i": i,
+                "dt": dt,
+                "pick_tech": pick_tech,
+                "pick_other": pick_other,
+                "conf_map": conf_map,
+            }
+        )
+        last_reb = i
 
-        def _sleeve_weights(names: list[str], sleeve_gross: float) -> pd.Series:
-            w = pd.Series(0.0, index=cols)
-            if not names or sleeve_gross <= 0:
-                return w
-            if not size_by_confidence:
-                w.loc[names] = sleeve_gross / len(names)
-                return w
-            # Softmax-ish via raw confidence floors so weak names still keep a stub.
-            raw = np.array([max(float(conf_map[t]["confidence"]), 5.0) for t in names], dtype=float)
-            raw = raw / raw.sum()
-            for t, wt in zip(names, raw):
-                w.loc[t] = sleeve_gross * float(wt)
-            return w
+    return {
+        "prices_index": prices.index,
+        "cols": cols,
+        "tech_cols": tech_cols,
+        "rets": rets,
+        "tech_weight": tech_weight,
+        "other_weight": other_weight,
+        "rebalance_every": rebalance_every,
+        "cost_bps": cost_bps,
+        "warmup": warmup,
+        "events": events,
+        "n_tech": n_tech,
+        "n_other": n_other,
+    }
 
-        new_w = pd.Series(0.0, index=cols)
-        if pick_tech and tech_weight > 1e-12:
-            sleeve_gross = tech_weight if pick_other else 1.0
-            new_w = new_w + _sleeve_weights(pick_tech, sleeve_gross)
-        if pick_other and other_weight > 1e-12:
-            sleeve_gross = other_weight if pick_tech else 1.0
-            new_w = new_w + _sleeve_weights(pick_other, sleeve_gross)
-        if new_w.sum() <= 0:
-            port.loc[dt] = 0.0
+
+def allocate_residual_momentum(
+    prepared: dict,
+    size_by_confidence: bool = False,
+    size_cfg: dict | None = None,
+) -> tuple[pd.Series, dict]:
+    """Turn prepared picks into a return series under V1 or V2 sizing."""
+    cols: list[str] = prepared["cols"]
+    rets: pd.DataFrame = prepared["rets"]
+    tech_weight = float(prepared["tech_weight"])
+    other_weight = float(prepared["other_weight"])
+    cost = float(prepared["cost_bps"]) / 10000.0
+    warmup = int(prepared["warmup"])
+    v2_cfg = {**DEFAULT_V2_SIZE, **(size_cfg or {})}
+
+    port = pd.Series(0.0, index=prepared["prices_index"], name="residual_momentum")
+    weights = pd.Series(0.0, index=cols)
+    trade_log: list[dict] = []
+    gross_hist: list[float] = []
+    event_by_i = {e["i"]: e for e in prepared["events"]}
+    last_event_i = -10**9
+
+    for i, dt in enumerate(prepared["prices_index"]):
+        if i < warmup:
             continue
 
-        # Normalize in case of float noise.
-        new_w = new_w / new_w.sum()
+        if i in event_by_i:
+            ev = event_by_i[i]
+            pick_tech = ev["pick_tech"]
+            pick_other = ev["pick_other"]
+            conf_map = ev["conf_map"]
 
-        for t in new_w[new_w > 0].index:
-            if float(weights.get(t, 0.0)) <= 0:
-                conf = conf_map.get(t) or _trade_confidence(
-                    ticker=t,
-                    score_row=s,
-                    sleeve_ranked=tech_ranked if t in tech else other_ranked,
-                    spy_px=spy_px,
-                    dt=dt,
-                    is_tech=t in tech,
-                )
-                trade_log.append(
-                    {
-                        "date": dt.strftime("%Y-%m-%d"),
-                        "ticker": t,
-                        "is_tech": t in tech,
-                        "weight": round(float(new_w.loc[t]), 6),
-                        "confidence": conf["confidence"],
-                        "confidence_components": conf["components"],
-                        "sizing": "confidence" if size_by_confidence else "equal",
-                    }
-                )
+            def _sleeve_weights(names: list[str], sleeve_gross: float) -> pd.Series:
+                w = pd.Series(0.0, index=cols)
+                if not names or sleeve_gross <= 0:
+                    return w
+                if not size_by_confidence:
+                    w.loc[names] = sleeve_gross / len(names)
+                    return w
+                return _confidence_sleeve_weights(names, sleeve_gross, conf_map, cols, v2_cfg)
 
-        turnover = (new_w - weights).abs().sum() / 2.0
-        port.loc[dt] = float((rets.loc[dt, cols].fillna(0.0) * new_w).sum()) - turnover * cost
-        weights = new_w
-        last_reb = i
+            new_w = pd.Series(0.0, index=cols)
+            if pick_tech and tech_weight > 1e-12:
+                sleeve_gross = tech_weight if pick_other else 1.0
+                new_w = new_w + _sleeve_weights(pick_tech, sleeve_gross)
+            if pick_other and other_weight > 1e-12:
+                sleeve_gross = other_weight if pick_tech else 1.0
+                new_w = new_w + _sleeve_weights(pick_other, sleeve_gross)
+            if new_w.sum() <= 0:
+                port.loc[dt] = 0.0
+                last_event_i = i
+                continue
+
+            new_w = new_w / new_w.sum()
+            conf_vals = [float(conf_map[t]["confidence"]) for t in new_w[new_w > 0].index]
+            if size_by_confidence:
+                gross = _gross_from_confidence(conf_vals, v2_cfg)
+                new_w = new_w * gross
+                gross_hist.append(gross)
+            else:
+                gross = 1.0
+
+            for t in new_w[new_w > 0].index:
+                if float(weights.get(t, 0.0)) <= 0:
+                    conf = conf_map[t]
+                    trade_log.append(
+                        {
+                            "date": dt.strftime("%Y-%m-%d"),
+                            "ticker": t,
+                            "is_tech": t in set(prepared["tech_cols"]),
+                            "weight": round(float(new_w.loc[t]), 6),
+                            "confidence": conf["confidence"],
+                            "confidence_components": conf["components"],
+                            "sizing": "confidence" if size_by_confidence else "equal",
+                            "gross": round(float(gross), 4),
+                        }
+                    )
+
+            turnover = (new_w - weights).abs().sum() / 2.0
+            port.loc[dt] = float((rets.loc[dt, cols].fillna(0.0) * new_w).sum()) - turnover * cost
+            weights = new_w
+            last_event_i = i
+        else:
+            port.loc[dt] = float((rets.loc[dt, cols].fillna(0.0) * weights).sum())
 
     port = port.fillna(0.0)
     live = port.iloc[warmup:]
@@ -272,18 +397,20 @@ def residual_momentum_returns(
         "mode": "tech_weight_residual_momentum",
         "version": version,
         "size_by_confidence": bool(size_by_confidence),
+        "size_cfg": dict(v2_cfg) if size_by_confidence else None,
         "tech_weight": tech_weight,
-        "n_tech": n_tech,
-        "n_other": n_other,
-        "rebalance_every": rebalance_every,
+        "n_tech": prepared["n_tech"],
+        "n_other": prepared["n_other"],
+        "rebalance_every": prepared["rebalance_every"],
         "n_trades": n_trades,
         "trades_per_month": (n_trades / months) if months > 0 else 0.0,
         "tech_trade_share": (n_tech_trades / n_trades) if n_trades else 0.0,
-        "tech_universe": sorted(tech_cols),
+        "tech_universe": sorted(prepared["tech_cols"]),
         "trade_log": trade_log,
+        "avg_gross": round(float(np.mean(gross_hist)), 4) if gross_hist else 1.0,
         "confidence": {
             "note": (
-                "V2 uses confidence to size holdings within sleeves."
+                "V2 uses confidence to size holdings within sleeves + optional cash buffer."
                 if size_by_confidence
                 else "Background only on V1 — does not affect selection or equal sizing."
             ),
@@ -304,8 +431,52 @@ def residual_momentum_returns(
             },
         },
     }
+    _ = last_event_i  # reserved for future diagnostics
     return port, stats
 
+
+def residual_momentum_returns(
+    prices: pd.DataFrame,
+    spy_col: str = "SPY",
+    lookback_beta: int = 90,
+    formation: int = 63,
+    skip: int = 1,
+    n_tech: int = 4,
+    n_other: int = 4,
+    tech_weight: float = 0.50,
+    rebalance_every: int = 5,
+    cost_bps: float = 5.0,
+    tech_tickers: set[str] | None = None,
+    size_by_confidence: bool = False,
+    size_cfg: dict | None = None,
+) -> tuple[pd.Series, dict]:
+    """
+    Long-only residual momentum with a fixed technology portfolio weight.
+
+    V1 (size_by_confidence=False): equal-weight within sleeves; confidence is
+    background metadata only.
+    V2 (size_by_confidence=True): same name selection; holdings sized from
+    confidence via size_cfg (tilt power, shrink-to-equal, name caps, optional
+    confidence-scaled gross / cash buffer).
+    """
+    prepared = prepare_residual_momentum(
+        prices,
+        spy_col=spy_col,
+        lookback_beta=lookback_beta,
+        formation=formation,
+        skip=skip,
+        n_tech=n_tech,
+        n_other=n_other,
+        tech_weight=tech_weight,
+        rebalance_every=rebalance_every,
+        cost_bps=cost_bps,
+        tech_tickers=tech_tickers,
+    )
+    return allocate_residual_momentum(
+        prepared,
+        size_by_confidence=size_by_confidence,
+        size_cfg=size_cfg,
+    )
 
 def drawdown_aware_score(metrics: dict) -> float:
     """

@@ -9,7 +9,7 @@ import pandas as pd
 from src.confluences import CONFLUENCES, apply_confluence, catalog_meta, survival_score
 from src.data import fetch_ohlc, load_universe
 from src.metrics import equity_from_returns, summarize, vol_target_returns
-from src.strategies_a import TECH_TICKERS, residual_momentum_returns
+from src.strategies_a import TECH_TICKERS, residual_momentum_returns, DEFAULT_V2_SIZE
 from src.strategies_b import lsc_proxy_returns
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -331,7 +331,12 @@ def run() -> dict:
                 "candidates_including_base": len(rows_v1),
                 "survivors": len(survivors),
                 "v1_note": "Equal-weight within sleeves; confidence is diagnostic only.",
-                "v2_note": "Same names; holdings sized by confidence within each sleeve.",
+                "v2_note": (
+                    "Optimized confidence sizing: mild shrink-to-equal tilt + "
+                    "confidence-scaled gross (cash buffer when conviction is weak)."
+                ),
+                "v2_size_cfg": dict(DEFAULT_V2_SIZE),
+                "v2_avg_gross": base_stats_v2.get("avg_gross"),
             },
             "strategy_b": {
                 "note": "Daily LSC proxy until 5m/1H stack is wired",
@@ -359,9 +364,13 @@ def run() -> dict:
         },
         "v1_v2_compare": {
             "method": (
-                "V1 equal-weight sleeves; V2 confidence-weighted holdings within sleeves "
-                "(same tickers / rebalance schedule / tech sleeve %). Same confluence overlays applied to both."
+                "V1 equal-weight sleeves. V2 (re-optimized): same tickers/rebalance; "
+                "confidence maps to (1) mild within-sleeve tilt via power+shrink-to-equal "
+                "+ name caps, and (2) gross exposure scaled by mean confidence "
+                "(cash buffer when conviction is weak). Same confluence overlays on both."
             ),
+            "v2_size_cfg": dict(DEFAULT_V2_SIZE),
+            "v2_avg_gross": base_stats_v2.get("avg_gross"),
             "v1_wins": v1_wins,
             "v2_wins": v2_wins,
             "ties": len(pairs) - v1_wins - v2_wins,
@@ -372,11 +381,15 @@ def run() -> dict:
             "n_trades": len(trade_log),
             "recent_trades": recent_trades,
             "v2_summary": base_stats_v2.get("confidence"),
+            "v2_avg_gross": base_stats_v2.get("avg_gross"),
         },
         "lsc_event_count": int(len(events)),
         "warnings": [
             f"Base book = residual momentum @ {int(BASE_TECH_WEIGHT*100)}% tech (long-only).",
-            "V1 keeps equal sleeve weights; V2 sizes holdings by confidence (same names).",
+            "V1 keeps equal sleeve weights; V2 uses optimized confidence sizing (tilt + cash buffer).",
+            f"V2 size cfg: shrink={DEFAULT_V2_SIZE['shrink']}, power={DEFAULT_V2_SIZE['power']}, "
+            f"gross_floor={DEFAULT_V2_SIZE['gross_floor']}, conf_band={DEFAULT_V2_SIZE['conf_lo']}-"
+            f"{DEFAULT_V2_SIZE['conf_hi']} (avg gross={base_stats_v2.get('avg_gross')}).",
             f"Tested {len(CONFLUENCES)} confluence overlays + base on both V1 and V2.",
             f"Pairwise scoreboard: V2 wins {v2_wins}, V1 wins {v1_wins}.",
             "Strategy B is a daily sweep/reclaim proxy — not the full 5m ICT confluence engine yet.",
