@@ -210,8 +210,8 @@
     <div class="row" id="badges"></div>
 
     <section class="panel">
-      <h2>Top confluence survivors (drawdown-safe)</h2>
-      <p class="hint">20 overlays on residual momentum (Tech 80%). Hard-reject if historical MaxDD &gt; 35%. Only the top survivors are charted — ranked for account survival, not raw CAGR chase.</p>
+      <h2>Top confluence survivors vs original Resid Mom</h2>
+      <p class="hint">Original established book is <strong>Resid Mom Tech 80%</strong>. Confluence overlays (MaxDD≤35%) are shown for comparison — charts still include the original setup.</p>
       <div class="chart-box full">
         <canvas id="techSweepChart"></canvas>
       </div>
@@ -235,14 +235,14 @@
     </section>
 
     <section class="panel">
-      <h2>Horizon windows — top survivors vs SPY</h2>
+      <h2>Horizon windows — original RM + top survivors vs SPY</h2>
       <p class="hint">Each chart is rebased to $1 at the start of the window so 3M / 6M / 1Y are visually comparable.</p>
       <div class="legend-row" id="sharedLegend"></div>
       <div class="windows" id="windows"></div>
     </section>
 
     <section class="panel">
-      <h2>Full sample equity — top survivors vs SPY</h2>
+      <h2>Full sample equity — original RM + top survivors vs SPY</h2>
       <div class="chart-box full">
         <canvas id="equityChart"></canvas>
       </div>
@@ -327,17 +327,27 @@
         { key: "spy_bh", label: "SPY B&H", color: "#7aa2ff", width: 1.5, dash: [] },
         { key: "spy_vol_match", label: "SPY vol-match", color: "#c4b5fd", width: 1.25, dash: [4, 4] },
       ];
+      // Established original residual-momentum book (Tech 80%) — always on graphs.
+      if (data.curves && data.curves.conf_base) {
+        books.push({
+          key: "conf_base",
+          label: "Resid Mom Tech 80%",
+          color: "#7dffb3",
+          width: 2.5,
+          dash: [],
+        });
+      }
       top.forEach((r, i) => {
+        if (r.curve_key === "conf_base") return; // already shown as original
         books.push({
           key: r.curve_key,
           label: `#${r.rank} ${r.label}`,
           color: TOP_COLORS[i % TOP_COLORS.length],
-          width: i === 0 ? 2.5 : 1.75,
+          width: i === 0 ? 2.2 : 1.6,
           dash: [],
         });
       });
-      // Fallback if confluence payload missing
-      if (top.length === 0) {
+      if (top.length === 0 && !(data.curves && data.curves.conf_base)) {
         books.push(
           { key: "strat_a", label: "Strat A", color: "#3dd6c6", width: 2, dash: [] },
           { key: "strat_b", label: "Strat B LSC", color: "#f0a34a", width: 2, dash: [] },
@@ -359,6 +369,7 @@
         <div class="badge ${stale ? "warn" : "ok"}"><strong>${stale ? "Data may be stale" : "Results loaded"}</strong> · ${new Date(data.generated_at).toUTCString()}</div>
         <div class="badge"><strong>Decision</strong> · ${data.decision_status}</div>
         <div class="badge"><strong>Survivors</strong> · ${survivors} (MaxDD≤35%)</div>
+        <div class="badge ok"><strong>Original RM</strong> · Tech 80%</div>
         <div class="badge ok"><strong>Strat A</strong> · ${selected}</div>
         <div class="badge"><strong>Score</strong> · ${a.selected_score != null ? Number(a.selected_score).toFixed(3) : "—"}</div>
       `;
@@ -389,7 +400,7 @@
         theses.innerHTML = top.map((r) => `<strong>#${r.rank} ${r.label}:</strong> ${r.thesis}`).join("<br/>");
       }
 
-      const firstKey = top[0].curve_key;
+      const firstKey = (data.curves.conf_base && "conf_base") || (top[0] && top[0].curve_key) || "strat_a";
       const labels = ((data.curves[firstKey] || data.curves.strat_a) || []).map((p) => p.date);
       const datasets = [
         {
@@ -400,13 +411,21 @@
           pointRadius: 0,
           borderWidth: 1.5,
         },
-        ...top.map((r, i) => ({
+        ...(data.curves.conf_base ? [{
+          label: "Resid Mom Tech 80%",
+          data: data.curves.conf_base.map((p) => p.equity),
+          borderColor: "#7dffb3",
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: 2.5,
+        }] : []),
+        ...top.filter((r) => r.curve_key !== "conf_base").map((r, i) => ({
           label: `#${r.rank} ${r.label}`,
           data: (data.curves[r.curve_key] || []).map((p) => p.equity),
           borderColor: TOP_COLORS[i % TOP_COLORS.length],
           tension: 0.05,
           pointRadius: 0,
-          borderWidth: i === 0 ? 2.5 : 1.75,
+          borderWidth: i === 0 ? 2.2 : 1.6,
         })),
       ];
       charts.push(new Chart(document.getElementById("techSweepChart"), {

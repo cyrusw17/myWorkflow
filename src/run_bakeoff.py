@@ -296,7 +296,9 @@ def run() -> dict:
             "spy_vol_match": _curve(spy_vm),
             "strat_a": _curve(a_rets),
             "strat_b": _curve(b_rets),
-            **{r["curve_key"]: curves[r["curve_key"]] for r in top},
+            # Always include the established original residual-momentum book on charts.
+            "conf_base": curves["conf_base"],
+            **{r["curve_key"]: curves[r["curve_key"]] for r in top if r["curve_key"] != "conf_base"},
         },
         "confluence_bakeoff": {
             "hard_max_dd": HARD_MAX_DD,
