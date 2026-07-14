@@ -245,17 +245,22 @@
     </section>
 
     <section class="panel">
-      <h2>Quarterly regime sleeves</h2>
-      <p class="hint">Each quarter Strat A re-picks stock types from market condition (SPY trend + vol) and sector relative strength, then runs residual momentum inside that sleeve.</p>
-      <div style="overflow-x:auto">
-        <table id="regimeTable">
+      <h2>Tech weight sweep — top 5 (drawdown-aware)</h2>
+      <p class="hint">Residual momentum swept from 25%→95% tech portfolio weight. Ranked by <code>0.55×Calmar + 0.45×Sharpe</code> with a soft max-drawdown penalty. Chart shows the top 5 equity curves.</p>
+      <div class="chart-box full">
+        <canvas id="techSweepChart"></canvas>
+      </div>
+      <div style="overflow-x:auto; margin-top:0.85rem">
+        <table id="techSweepTable">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Regime</th>
-              <th>Sectors</th>
-              <th>SPY 63d</th>
-              <th>Vol ratio</th>
+              <th>Rank</th>
+              <th>Tech weight</th>
+              <th>Score</th>
+              <th>CAGR</th>
+              <th>Sharpe</th>
+              <th>Max DD</th>
+              <th>Calmar</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -295,41 +300,63 @@
       return res.json();
     }
 
+    const TOP5_COLORS = ["#3dd6c6", "#f0a34a", "#7aa2ff", "#e879a9", "#c4b5fd"];
+
     function renderBadges(data) {
       const el = document.getElementById("badges");
       const staleHours = (Date.now() - Date.parse(data.generated_at)) / 36e5;
       const stale = staleHours > 24 * 14;
       const a = (data.assumptions && data.assumptions.strategy_a) || {};
-      const tradesMo = a.realized_trades_per_month;
-      const regime = a.latest_regime || "—";
-      const sectors = (a.latest_sectors || []).join(", ") || "—";
+      const selected = a.selected_from_sweep || (a.tech_weight != null ? `Tech ${Math.round(a.tech_weight * 100)}%` : "—");
+      const top = (data.tech_sweep && data.tech_sweep.top5 && data.tech_sweep.top5[0]) || null;
       el.innerHTML = `
         <div class="badge ${stale ? "warn" : "ok"}"><strong>${stale ? "Data may be stale" : "Results loaded"}</strong> · ${new Date(data.generated_at).toUTCString()}</div>
         <div class="badge"><strong>Decision</strong> · ${data.decision_status}</div>
         <div class="badge"><strong>Source</strong> · ${data.data_source}</div>
         <div class="badge"><strong>LSC events</strong> · ${data.lsc_event_count}</div>
-        <div class="badge ok"><strong>A regime</strong> · ${regime}</div>
-        <div class="badge"><strong>A sleeves</strong> · ${sectors}</div>
-        <div class="badge"><strong>A trades/mo</strong> · ${tradesMo == null ? "—" : Number(tradesMo).toFixed(1)}</div>
+        <div class="badge ok"><strong>A tech weight</strong> · ${selected}</div>
+        <div class="badge"><strong>A score</strong> · ${top ? Number(top.score).toFixed(3) : (a.selected_score != null ? Number(a.selected_score).toFixed(3) : "—")}</div>
       `;
     }
 
-    function renderRegimeTable(data) {
-      const body = document.querySelector("#regimeTable tbody");
-      const rows = (data.regime_decisions || []).slice().reverse();
-      if (!rows.length) {
-        body.innerHTML = `<tr><td colspan="5">No regime decisions yet.</td></tr>`;
+    function renderTechSweep(data) {
+      const sweep = data.tech_sweep || {};
+      const top5 = sweep.top5 || [];
+      const body = document.querySelector("#techSweepTable tbody");
+      if (!top5.length) {
+        body.innerHTML = `<tr><td colspan="7">No tech sweep results.</td></tr>`;
         return;
       }
-      body.innerHTML = rows.map((r) => `
+      body.innerHTML = top5.map((r) => `
         <tr>
-          <td>${r.date}</td>
-          <td>${r.regime}</td>
-          <td>${(r.sectors || []).join(", ")}</td>
-          <td class="num">${pct(r.spy_ret_63)}</td>
-          <td class="num">${num(r.vol_ratio)}</td>
+          <td>#${r.rank}</td>
+          <td>${r.label}</td>
+          <td class="num">${num(r.score)}</td>
+          <td class="num">${pct(r.cagr)}</td>
+          <td class="num">${num(r.sharpe)}</td>
+          <td class="num">${pct(r.max_dd)}</td>
+          <td class="num">${num(r.calmar)}</td>
         </tr>
       `).join("");
+
+      const firstKey = top5[0].curve_key;
+      const labels = ((data.curves[firstKey] || data.curves.strat_a) || []).map((p) => p.date);
+      const datasets = top5.map((r, i) => {
+        const pts = data.curves[r.curve_key] || [];
+        return {
+          label: `#${r.rank} ${r.label}`,
+          data: pts.map((p) => p.equity),
+          borderColor: TOP5_COLORS[i % TOP5_COLORS.length],
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: i === 0 ? 2.5 : 1.75,
+        };
+      });
+      charts.push(new Chart(document.getElementById("techSweepChart"), {
+        type: "line",
+        data: { labels, datasets },
+        options: chartOptions({ legend: true, maxTicks: isMobile() ? 4 : 8 }),
+      }));
     }
 
     function renderTable(metrics) {
@@ -516,12 +543,13 @@
     function renderWarnings(data) {
       const ul = document.getElementById("warnings");
       const a = data.assumptions;
+      const sa = a.strategy_a || {};
       const items = [
         `Cost model: ${a.cost_bps_per_turnover_or_entry} bps per turnover/entry.`,
         `Universe: ${data.universe.join(", ")}.`,
-        `A params: quarterly regime sleeves · beta L=${a.strategy_a.lookback_beta}, W=${a.strategy_a.formation}, hold=${a.strategy_a.n_hold}, sectors/quarter=${a.strategy_a.n_sectors}.`,
-        `A ops: ${a.strategy_a.realized_trades_per_month} trades/mo · regime=${a.strategy_a.latest_regime} · sleeves=${(a.strategy_a.latest_sectors || []).join(", ")}.`,
-        `A trade mix: ${Object.entries(a.strategy_a.trade_sector_mix || {}).map(([k,v]) => `${k} ${(v*100).toFixed(0)}%`).join(", ") || "—"}.`,
+        `A params: tech-weight residual momentum · beta L=${sa.lookback_beta}, W=${sa.formation}, rebalance every ${sa.rebalance_every}d, tech sleeve names=${sa.n_tech}, other=${sa.n_other}.`,
+        `A selected: ${sa.selected_from_sweep || "—"} (score=${sa.selected_score != null ? Number(sa.selected_score).toFixed(3) : "—"}).`,
+        `A score method: ${sa.score_method || (data.tech_sweep && data.tech_sweep.score_method) || "—"}.`,
         `B params: pool=${a.strategy_b.lookback_pool}d, hold=${a.strategy_b.hold_days}d — ${a.strategy_b.note}`,
         ...(data.warnings || []),
       ];
@@ -535,7 +563,7 @@
         renderWindows(data);
         renderFullChart(data);
         renderTable(data.metrics);
-        renderRegimeTable(data);
+        renderTechSweep(data);
         renderWarnings(data);
       })
       .catch((err) => {
