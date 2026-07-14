@@ -30,13 +30,19 @@ S_{i,t} = \sum_{\tau = t-W-G}^{t-G} \hat\varepsilon_{i,\tau}
 - Skip/gap \(G \in \{0, 1, 5\}\) trading days (classic momentum lag ablation)
 
 ### Portfolio
-**Retail default (Robinhood-realistic):** long-only top decile / quintile, equal-weight or vol-weight, weekly rebalance.
+**Retail default (Robinhood-realistic):** long-only equal-weight sleeve of `n_hold` names (default 8).
+
+**Activity targets (Phase 0 ops):**
+- **~20 trades/month** — daily rebalance with ~1 new entry per rebalance day
+- **≥30% of trades in technology** — tech sleeve (`XLK`/`QQQ` + megacap/semicap software/semis); entry bias + holding floor enforce the share
+
+A *trade* is an entry (weight 0 → >0).
 
 **Research shadow book:** long top / short bottom; beta-neutralize portfolio to SPY.
 
 ### Risk
-- Max weight per name: 5–10%
-- Optional: neutralize sector tilt
+- Max weight per name: equal-weight ≈ 12.5% at `n_hold=8` (soft vs classic 5–10% — prefer more names over concentration when expanding)
+- Technology trade floor: ≥30% of entries
 - No leverage > 1.0 in Phase 0 retail book
 
 ## Benchmark
