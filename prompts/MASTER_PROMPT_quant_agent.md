@@ -251,8 +251,16 @@ Create / update in-repo:
    `src/data/`, `src/strategies/a_residual_momentum/`, `src/strategies/b_lsc/`, `src/backtest/`, `src/metrics/`, `src/reports/`
 6. One command to reproduce the comparison (CLI or notebook → prefer CLI for honesty)
 7. Event CSV sample for Strat B (timestamp, state, reason) for chart audit
+8. **GitHub Pages backtest dashboard (REQUIRED)** — a public static site so humans can view the SPY bake-off without running Python:
+   - Source in `site/` (or `/docs` Pages folder — pick one and lock it)
+   - Must show: equity curves (Strat A, Strat B, SPY B&H, SPY vol-match), metrics table, last-run timestamp, cost assumptions, and kill/decision status
+   - Backtest CLI writes machine-readable JSON to `site/data/bakeoff.json` (committed or generated in CI)
+   - GitHub Actions workflow deploys Pages on every push to the default branch
+   - Site URL must be documented in README after first deploy
+   - Charts must be readable on mobile; no login; no backend
+   - If live market data fails in CI, fall back to cached `site/data/` artifacts and show a clear “data stale / offline” badge — never ship a blank page
 
-**Non-goals for Phase 0:** fancy UI, social signals, options, prediction markets, live RH keys.
+**Non-goals for Phase 0:** social signals, options, prediction markets, live RH keys. A **simple** Pages research dashboard is in-scope (not a trading UI).
 
 ---
 
@@ -273,8 +281,9 @@ Create / update in-repo:
 3. Specify data requirements (what bars, what symbols for SMT).
 4. Implement SPY baselines + cost model.
 5. Implement minimal backtests for A and B (even if B starts with coarse sweep+BOS only, then add confluence layers).
-6. Walk-forward + fill Decision Memo.
-7. Only then scaffold the paper trading agent around the winner.
+6. Wire CLI → `site/data/bakeoff.json` → GitHub Pages dashboard; confirm the site renders curves + metrics.
+7. Walk-forward + fill Decision Memo; reflect winner on the Pages dashboard.
+8. Only then scaffold the paper trading agent around the winner.
 
 ---
 

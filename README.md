@@ -1,56 +1,79 @@
 # AI Agent — Agentic Trading Research & Execution
 
+> **Agent build prompt:** When an AI coding agent is pointed at this README, treat § Build Prompt below as the executable brief. Prefer the full spec in [`prompts/MASTER_PROMPT_quant_agent.md`](prompts/MASTER_PROMPT_quant_agent.md). Do Phase 0 first. Ship a **GitHub Pages** backtest viewer.
+
 **Owner intent:** Build an AI agent that can eventually trade via Robinhood (agentic trading), starting with **strategy selection** — not live capital.
 
 ## Phase 0 (current): Strategy bake-off vs SPY
 
-Before any brokerage wiring, the agent must scientifically compare:
-
 | # | Strategy | Style | Horizon |
 |---|----------|-------|---------|
 | **1** | Residual Momentum | Classic quant / factor | Multi-day to weeks |
-| **2** | Liquidity Sweep Continuation (LSC) | SMC / ICT day-trade | Intraday (1H/4H → 5m) |
+| **2** | Liquidity Sweep Continuation (LSC) | SMC / ICT day-trade | Intraday (1H/4H → 5m; daily proxy OK until bars land) |
 
-Both strategies are benchmarked against **SPY** (buy-and-hold and risk-adjusted SPY proxies). Winner → Phase 1 paper trading → Phase 2 Robinhood execution with hard risk caps.
+Both strategies are benchmarked against **SPY**. Winner → paper trading → Robinhood with hard risk caps.
 
-## Use the master prompt
+## Build Prompt (execute this)
 
-Open a new Cursor / Claude / Codex chat and paste:
+You are shipping a reproducible research lab + public results page.
 
-→ [`prompts/MASTER_PROMPT_quant_agent.md`](prompts/MASTER_PROMPT_quant_agent.md)
+1. **Compare** Residual Momentum vs LSC vs SPY using the locked specs in `strategies/` and `docs/research-protocol.md`.
+2. **Implement** Python backtests under `src/` with one CLI: `python -m src.run_bakeoff`.
+3. **Emit** `site/data/bakeoff.json` (equity curves + metrics + assumptions + decision status).
+4. **Publish** a GitHub Pages dashboard from `site/` that visualizes the bake-off (curves, metrics table, costs, stale-data badge). Deploy via GitHub Actions on push to the default branch.
+5. **Do not** wire live Robinhood orders in this phase.
+6. If market data is unavailable, use cached CSV under `data/cache/` and still ship a working Pages site.
 
-That single prompt is the operating system for the agent: research protocol, strategy specs, metrics, kill criteria, and Robinhood-ready architecture later.
+### GitHub Pages requirements
+
+- Static only (HTML/CSS/JS). No server.
+- Charts + metrics for Strat A, Strat B, SPY B&H, SPY vol-match.
+- Mobile-readable.
+- Document the live URL in this README once Pages is on.
+- Expected URL pattern: `https://cyrusw17.github.io/myWorkflow/` (updates if the repo is renamed to `ai-agent`).
+
+## Quick start
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m src.run_bakeoff
+# open site/index.html locally, or view GitHub Pages after Actions deploy
+```
 
 ## Repo layout
 
 ```
 .
-├── README.md
-├── prompts/
-│   └── MASTER_PROMPT_quant_agent.md   ← paste this into a new AI session
-├── strategies/
-│   ├── 01-residual-momentum.md
-│   └── 02-liquidity-sweep-continuation.md
-└── docs/
-    └── research-protocol.md
+├── README.md                          ← this build prompt
+├── prompts/MASTER_PROMPT_quant_agent.md
+├── strategies/                        ← locked strategy specs
+├── docs/                              ← research protocol + decision memo
+├── src/                               ← backtest code
+├── site/                              ← GitHub Pages dashboard
+│   ├── index.html
+│   └── data/bakeoff.json
+└── .github/workflows/pages.yml
 ```
 
 ## GitHub
 
-**https://github.com/cyrusw17/myWorkflow** (rename to `ai-agent` on GitHub when ready)
+**https://github.com/cyrusw17/myWorkflow** (rename to `ai-agent` when ready)  
+**Pages:** https://cyrusw17.github.io/myWorkflow/
 
 ## Non-negotiables
 
-1. **No live trading** until backtests + paper trade clear kill criteria.
-2. **SPY is the null hypothesis** — if a strategy does not beat SPY on risk-adjusted terms, it dies.
-3. **Operational definitions > vibes** — BOS, IFVG, SMT, liquidity sweeps must be coded as measurable rules.
-4. **Risk first** — max daily loss, position size, and kill-switch before any order path exists.
+1. No live trading until backtests + paper clear kill criteria.
+2. SPY is the null hypothesis.
+3. Operational definitions > vibes.
+4. Risk first.
+5. Backtests must be viewable on GitHub Pages.
 
 ## Status
 
-- [x] Master quant prompt
-- [x] Strategy 1 + Strategy 2 written specs
-- [x] Research protocol (metrics, walk-forward, kill rules)
-- [ ] Backtest scaffolding (code)
+- [x] Master quant prompt (+ Pages requirement)
+- [x] Strategy specs + research protocol
+- [x] Backtest scaffolding + Pages dashboard
+- [ ] Full walk-forward + filled decision memo
 - [ ] Paper trade loop
 - [ ] Robinhood execution adapter (last)

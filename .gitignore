@@ -12,6 +12,7 @@ venv/
 .ipynb_checkpoints/
 data/raw/
 data/processed/
+# Keep data/cache CSVs for offline/CI bake-offs
 outputs/
 *.parquet
 *.h5
