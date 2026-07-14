@@ -74,6 +74,11 @@ python -m src.run_bakeoff
 - [x] Master quant prompt (+ Pages requirement)
 - [x] Strategy specs + research protocol
 - [x] Backtest scaffolding + Pages dashboard
+- [x] GitHub Pages live — [dashboard](https://cyrusw17.github.io/myWorkflow/) (also `/site/`)
 - [ ] Full walk-forward + filled decision memo
 - [ ] Paper trade loop
 - [ ] Robinhood execution adapter (last)
+
+### Pages tip
+
+If Source is **Deploy from a branch**, set Folder to **`/site`** so the dashboard is the site root (no redirect). Prefer **GitHub Actions** (`.github/workflows/pages.yml`) when enabled — it deploys `site/` and refreshes `bakeoff.json` on push.
