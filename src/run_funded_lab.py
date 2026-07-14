@@ -258,23 +258,21 @@ def _curve(rets: pd.Series, step: int = 5) -> list[dict]:
 
 def prop_risk_gate(
     rets: pd.Series,
-    daily_loss_limit: float = 0.012,
-    soft_dd: float = 0.06,
+    daily_loss_limit: float = 0.015,
+    soft_dd: float = 0.05,
     hard_dd: float = 0.09,
-    flatten_exp: float = 0.0,
 ) -> tuple[pd.Series, dict]:
     """
-    Prop-compliant exposure overlay (lagged):
-      - halt new risk after day P&L ≤ -daily_loss_limit (approx via overnight halt)
-      - soft cut when path DD ≤ -soft_dd
-      - flatten when path DD ≤ -hard_dd (buffer under a 10% static floor)
+    Prop-compliant exposure overlay (lagged, continuous):
+      - scale down as path DD approaches hard_dd (buffer under a 10% static floor)
+      - halt for the remainder of the day after day P&L ≤ -daily_loss_limit
     """
     r = rets.fillna(0.0)
     eq = 1.0
     peak = 1.0
     day = None
     day_pnl = 0.0
-    exp = 1.0
+    day_halt = False
     out = []
     halts = softs = hards = 0
 
@@ -283,26 +281,33 @@ def prop_risk_gate(
         if day is None or d != day:
             day = d
             day_pnl = 0.0
-            # reopen each day unless still under hard path DD
-            if (eq / peak - 1.0) > -hard_dd:
-                exp = 1.0 if (eq / peak - 1.0) > -soft_dd else 0.35
+            day_halt = False
+
+        dd = eq / peak - 1.0
+        # Continuous delever toward the hard floor; never jump to zero early.
+        if dd <= -hard_dd:
+            exp = 0.0
+            hards += 1
+        elif dd <= -soft_dd:
+            # lerp soft→hard: soft=0.70exp, hard=0.0
+            span = max(hard_dd - soft_dd, 1e-9)
+            t = min(1.0, max(0.0, (-dd - soft_dd) / span))
+            exp = 0.70 * (1.0 - t)
+            softs += 1
+        else:
+            exp = 1.0
+
+        if day_halt:
+            exp = 0.0
 
         traded = float(ret) * exp
         out.append(traded)
         eq *= 1.0 + traded
         peak = max(peak, eq)
         day_pnl += traded
-        dd = eq / peak - 1.0
-
         if day_pnl <= -daily_loss_limit:
-            exp = flatten_exp
+            day_halt = True
             halts += 1
-        elif dd <= -hard_dd:
-            exp = flatten_exp
-            hards += 1
-        elif dd <= -soft_dd:
-            exp = min(exp, 0.35)
-            softs += 1
 
     series = pd.Series(out, index=r.index, name="prop_gated")
     stats = {
@@ -312,6 +317,7 @@ def prop_risk_gate(
         "daily_loss_limit": daily_loss_limit,
         "soft_dd": soft_dd,
         "hard_dd": hard_dd,
+        "mode": "continuous_delever",
     }
     return series, stats
 
@@ -345,9 +351,9 @@ def run() -> dict:
     # Prop-gated version of that survivor (FTMO-shaped buffers)
     prop_rets, gate_stats = prop_risk_gate(
         v2_corr_vol,
-        daily_loss_limit=0.015,  # 1.5% day stop → buffer under 5% FTMO daily
-        soft_dd=0.06,
-        hard_dd=0.092,  # leave a little cushion under 10% static
+        daily_loss_limit=0.015,
+        soft_dd=0.05,
+        hard_dd=0.092,
     )
 
     books = []
