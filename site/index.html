@@ -245,6 +245,25 @@
     </section>
 
     <section class="panel">
+      <h2>Quarterly regime sleeves</h2>
+      <p class="hint">Each quarter Strat A re-picks stock types from market condition (SPY trend + vol) and sector relative strength, then runs residual momentum inside that sleeve.</p>
+      <div style="overflow-x:auto">
+        <table id="regimeTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Regime</th>
+              <th>Sectors</th>
+              <th>SPY 63d</th>
+              <th>Vol ratio</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Assumptions & warnings</h2>
       <ul class="warnings" id="warnings"></ul>
     </section>
@@ -281,18 +300,36 @@
       const staleHours = (Date.now() - Date.parse(data.generated_at)) / 36e5;
       const stale = staleHours > 24 * 14;
       const a = (data.assumptions && data.assumptions.strategy_a) || {};
-      const techShare = a.realized_tech_trade_share;
       const tradesMo = a.realized_trades_per_month;
-      const techOk = techShare != null && techShare >= 0.30;
-      const tradeOk = tradesMo != null && tradesMo >= 15 && tradesMo <= 28;
+      const regime = a.latest_regime || "—";
+      const sectors = (a.latest_sectors || []).join(", ") || "—";
       el.innerHTML = `
         <div class="badge ${stale ? "warn" : "ok"}"><strong>${stale ? "Data may be stale" : "Results loaded"}</strong> · ${new Date(data.generated_at).toUTCString()}</div>
         <div class="badge"><strong>Decision</strong> · ${data.decision_status}</div>
         <div class="badge"><strong>Source</strong> · ${data.data_source}</div>
         <div class="badge"><strong>LSC events</strong> · ${data.lsc_event_count}</div>
-        <div class="badge ${techOk ? "ok" : "warn"}"><strong>A tech trades</strong> · ${techShare == null ? "—" : (techShare * 100).toFixed(0) + "%"} (≥30%)</div>
-        <div class="badge ${tradeOk ? "ok" : "warn"}"><strong>A trades/mo</strong> · ${tradesMo == null ? "—" : Number(tradesMo).toFixed(1)} (~20)</div>
+        <div class="badge ok"><strong>A regime</strong> · ${regime}</div>
+        <div class="badge"><strong>A sleeves</strong> · ${sectors}</div>
+        <div class="badge"><strong>A trades/mo</strong> · ${tradesMo == null ? "—" : Number(tradesMo).toFixed(1)}</div>
       `;
+    }
+
+    function renderRegimeTable(data) {
+      const body = document.querySelector("#regimeTable tbody");
+      const rows = (data.regime_decisions || []).slice().reverse();
+      if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="5">No regime decisions yet.</td></tr>`;
+        return;
+      }
+      body.innerHTML = rows.map((r) => `
+        <tr>
+          <td>${r.date}</td>
+          <td>${r.regime}</td>
+          <td>${(r.sectors || []).join(", ")}</td>
+          <td class="num">${pct(r.spy_ret_63)}</td>
+          <td class="num">${num(r.vol_ratio)}</td>
+        </tr>
+      `).join("");
     }
 
     function renderTable(metrics) {
@@ -482,8 +519,9 @@
       const items = [
         `Cost model: ${a.cost_bps_per_turnover_or_entry} bps per turnover/entry.`,
         `Universe: ${data.universe.join(", ")}.`,
-        `A params: beta L=${a.strategy_a.lookback_beta}, W=${a.strategy_a.formation}, skip=${a.strategy_a.skip}, hold=${a.strategy_a.n_hold}, 1 entry/day, tech floor ${(a.strategy_a.target_tech_trade_share * 100).toFixed(0)}%.`,
-        `A ops: ${a.strategy_a.realized_trades_per_month} trades/mo · ${(a.strategy_a.realized_tech_trade_share * 100).toFixed(1)}% tech trades.`,
+        `A params: quarterly regime sleeves · beta L=${a.strategy_a.lookback_beta}, W=${a.strategy_a.formation}, hold=${a.strategy_a.n_hold}, sectors/quarter=${a.strategy_a.n_sectors}.`,
+        `A ops: ${a.strategy_a.realized_trades_per_month} trades/mo · regime=${a.strategy_a.latest_regime} · sleeves=${(a.strategy_a.latest_sectors || []).join(", ")}.`,
+        `A trade mix: ${Object.entries(a.strategy_a.trade_sector_mix || {}).map(([k,v]) => `${k} ${(v*100).toFixed(0)}%`).join(", ") || "—"}.`,
         `B params: pool=${a.strategy_b.lookback_pool}d, hold=${a.strategy_b.hold_days}d — ${a.strategy_b.note}`,
         ...(data.warnings || []),
       ];
@@ -497,6 +535,7 @@
         renderWindows(data);
         renderFullChart(data);
         renderTable(data.metrics);
+        renderRegimeTable(data);
         renderWarnings(data);
       })
       .catch((err) => {
