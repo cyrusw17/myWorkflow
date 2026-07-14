@@ -173,6 +173,41 @@ FIRMS: list[dict] = [
         "links": {"site": "https://myfundedfutures.com", "rules_hint": "Automation policy update + trailing DD"},
     },
     {
+        "id": "tradeify",
+        "name": "Tradeify",
+        "tier": "futures_algo",
+        "asset_class": "CME futures",
+        "backing_note": "US futures prop (est. 2024); large advertised payout volume / strong Trustpilot; one-time fees, $0 activation on current marketing.",
+        "automation": {
+            "summary": "Personal bots / EAs allowed if you are sole owner+developer; register/verify uniqueness; no rented commercial bots; no HFT.",
+            "api": "Tradovate / Rithmic / NinjaTrader (+ TradeSea); TradingView webhooks via bridges",
+            "ai_agents": "Yes for our in-house agent — must not share the same bot across other firms; expect code/demo if flagged.",
+            "restrictions": "Sole-owner/single-firm bot rule; hold-time / anti-HFT (majority of profit from trades held >~5–10s); no latency games.",
+        },
+        "rules": {
+            "eval": "Growth / Select one-step evals, or Lightning instant funded",
+            "daily_loss": "Plan-dependent (Growth soft DLL; Select Flex often none; Select Daily / Lightning have DLL)",
+            "max_dd": "EOD trailing that locks to start+$100 once far enough ahead — then behaves static",
+            "dd_type": "trailing_eod_then_lock",
+            "consistency": "Select funded: NONE (best payout path). Growth funded ~35%. Lightning funded progressive ~20→25→30%. Select eval ~40%.",
+            "min_days": "Select eval typically ≥3 days; Lightning skips eval",
+            "payout": "Select Daily = daily; Select Flex = every ~5 winning days; fast processing; ~90% split (often 100% on first $15K tranche — verify)",
+        },
+        "scores": {"trust": 18, "api_ai": 20, "dd_model": 16, "payout_safety": 22},
+        "fit_for_us": (
+            "Best futures prop in this catalog for an in-house AI agent if we port to CME: "
+            "Select eval → Flex funded (personal bots OK + consistency REMOVED). "
+            "Not a drop-in for equity residual-mom — needs a futures rebuild."
+        ),
+        "watchouts": (
+            "EOD trailing fights open risk until the floor locks near start+$100; "
+            "skip Growth/Lightning if you hate consistency (they keep it funded); "
+            "sole-owner/single-firm bot rule — prove uniqueness if flagged; "
+            "50%+ of profit from trades held >~5–10s (anti-HFT)."
+        ),
+        "links": {"site": "https://tradeify.co", "rules_hint": "Select Flex funded rules + automation / sole-owner bot policy"},
+    },
+    {
         "id": "the5ers",
         "name": "The5ers",
         "tier": "secondary",
@@ -428,6 +463,11 @@ def run() -> dict:
     playbook = {
         "objective": "Pass eval + stay funded + get paid — without rule-denial on automation or consistency.",
         "recommended_firm": firms[0]["id"],
+        "futures_alternate": "tradeify",
+        "futures_path": (
+            "If rebuilding as CME futures: Tradeify Select eval → Flex funded "
+            "(personal sole-owner bots OK; no consistency once funded). Prefer over Growth/Lightning."
+        ),
         "signal": "Optimized V2 residual momentum + anti-crowd corr + 10% vol target (from dd-lab).",
         "risk_box_ftmo_shaped": {
             "per_trade_risk": "≤0.5–0.75% of account (static DD grows only if you don't trail)",
@@ -446,6 +486,7 @@ def run() -> dict:
             "Spread profits across days before requesting payout.",
             "Keep a written change-log of strategy versions (audit defense).",
             "Never run the identical closed-source bot on a web of borrowed accounts.",
+            "On Tradeify: register sole ownership of the bot; stay off Growth/Lightning if you want zero consistency.",
         ],
     }
 
@@ -473,6 +514,7 @@ def run() -> dict:
             "Consistency rules don't always breach the account — they silently block payouts until diluted.",
             "Native AI REST APIs (e.g. Propr) are rare; most 'API' paths are MT5 EA or cTrader/Tradovate bridges.",
             "Our equity residual-mom research is closest to CFD index/stock products at FTMO/E8 — not a 1:1 Robinhood transfer.",
+            "Tradeify Select Flex is the payout-friendly futures path here (no funded consistency) — but trailing EOD DD + futures-only still require a strategy port.",
         ],
     }
     OUT.write_text(json.dumps(payload, indent=2))
