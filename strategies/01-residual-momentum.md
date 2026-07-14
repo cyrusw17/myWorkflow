@@ -32,17 +32,24 @@ S_{i,t} = \sum_{\tau = t-W-G}^{t-G} \hat\varepsilon_{i,\tau}
 ### Portfolio
 **Retail default (Robinhood-realistic):** long-only equal-weight sleeve of `n_hold` names (default 8).
 
-**Activity targets (Phase 0 ops):**
-- **~20 trades/month** — daily rebalance with ~1 new entry per rebalance day
-- **≥30% of trades in technology** — tech sleeve (`XLK`/`QQQ` + megacap/semicap software/semis); entry bias + holding floor enforce the share
+**Quarterly stock-type selection (replaces fixed tech floor):**
+1. On each calendar quarter open, classify market regime from SPY trend + vol stress:
+   - `risk_on` — uptrend, calm vol → prefer tech / consumer / financials
+   - `recovery` — vol stress but stabilizing uptrend → financials / industrials / consumer
+   - `late_cycle` — warm trend with rising vol → energy / financials / industrials
+   - `risk_off` — downtrend or high stress → defensive / health / staples
+2. Score sleeves by relative strength vs SPY (~63d) and keep the top ~3 for that quarter
+3. Run residual-momentum **only inside the active sleeves** for the quarter
+
+**Activity:** weekly rebalance of top residual-momentum names inside the active sleeves.
 
 A *trade* is an entry (weight 0 → >0).
 
 **Research shadow book:** long top / short bottom; beta-neutralize portfolio to SPY.
 
 ### Risk
-- Max weight per name: equal-weight ≈ 12.5% at `n_hold=8` (soft vs classic 5–10% — prefer more names over concentration when expanding)
-- Technology trade floor: ≥30% of entries
+- Max weight per name: equal-weight ≈ 12.5% at `n_hold=8`
+- Sleeve set is re-chosen quarterly; names outside the new sleeve are rotated out first
 - No leverage > 1.0 in Phase 0 retail book
 
 ## Benchmark

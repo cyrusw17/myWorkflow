@@ -8,14 +8,14 @@ import pandas as pd
 
 from src.data import fetch_ohlc, load_universe
 from src.metrics import equity_from_returns, summarize, vol_target_returns
-from src.strategies_a import TECH_TICKERS, residual_momentum_returns
+from src.strategies_a import SECTOR_MAP, residual_momentum_returns
 from src.strategies_b import lsc_proxy_returns
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE_DATA = ROOT / "site" / "data"
 EVENTS = ROOT / "outputs" / "lsc_events.csv"
+REGIME_OUT = ROOT / "outputs" / "regime_decisions.json"
 
-# Broader liquid book so residual momentum can trade ~20×/month with a tech sleeve.
 UNIVERSE = [
     "SPY",
     # Technology
@@ -39,7 +39,7 @@ UNIVERSE = [
     "AMZN",
     "MU",
     "NOW",
-    # Non-tech diversifiers
+    # Diversifiers / other sleeves
     "IWM",
     "XLF",
     "XLE",
@@ -88,14 +88,14 @@ def run() -> dict:
         "formation": 63,
         "skip": 1,
         "n_hold": 8,
-        "rebalance_every": 1,
-        "entries_per_rebalance": 1,
-        "min_tech_share": 0.30,
+        "rebalance_every": 5,
+        "n_sectors": 3,
         "cost_bps": 5.0,
     }
     a_rets, a_stats = residual_momentum_returns(prices, **a_params)
     b_rets, events = lsc_proxy_returns(spy_ohlc)
     events.to_csv(EVENTS, index=False)
+    REGIME_OUT.write_text(json.dumps(a_stats.get("regime_decisions", []), indent=2))
 
     # Align
     idx = spy_rets.index.intersection(a_rets.index).intersection(b_rets.index)
@@ -103,7 +103,6 @@ def run() -> dict:
     a_rets = a_rets.loc[idx]
     b_rets = b_rets.loc[idx]
 
-    # Vol-match SPY to Strategy A realized vol
     a_vol = float(a_rets.std() * (252 ** 0.5))
     spy_vm = vol_target_returns(spy_rets, target_vol=max(a_vol, 0.05))
 
@@ -114,7 +113,6 @@ def run() -> dict:
         summarize(b_rets, "Strat B LSC proxy"),
     ]
 
-    # Naive interim decision (will be replaced by walk-forward memo)
     sharpes = {m["name"]: m["sharpe"] for m in metrics}
     eligible = []
     if sharpes["Strat A Residual Momentum"] > sharpes["SPY vol-match"]:
@@ -130,9 +128,8 @@ def run() -> dict:
     else:
         decision = "KILL_REDESIGN"
 
-    tech_ok = a_stats["tech_trade_share"] >= a_params["min_tech_share"] - 1e-9
+    latest = a_stats.get("latest_regime") or {}
     trade_rate = a_stats["trades_per_month"]
-    trade_rate_ok = 15.0 <= trade_rate <= 28.0  # aim ~20, allow band
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -142,13 +139,16 @@ def run() -> dict:
             "start": "2018-01-01",
             "cost_bps_per_turnover_or_entry": 5.0,
             "strategy_a": {
+                "mode": "quarterly_regime_residual_momentum",
                 **{k: v for k, v in a_params.items() if k != "cost_bps"},
-                "tech_tickers": sorted(t for t in TECH_TICKERS if t in UNIVERSE),
-                "target_tech_trade_share": a_params["min_tech_share"],
-                "target_trades_per_month": 20,
-                "realized_tech_trade_share": round(a_stats["tech_trade_share"], 4),
+                "sector_sleeves": sorted(set(SECTOR_MAP.values())),
+                "target_trades_per_month": None,
                 "realized_trades_per_month": round(a_stats["trades_per_month"], 2),
                 "n_trades": a_stats["n_trades"],
+                "trade_sector_mix": a_stats.get("trade_sector_mix", {}),
+                "latest_regime": latest.get("regime"),
+                "latest_sectors": latest.get("sectors"),
+                "regime_decision_count": len(a_stats.get("regime_decisions", [])),
             },
             "strategy_b": {
                 "note": "Daily LSC proxy until 5m/1H stack is wired",
@@ -168,16 +168,18 @@ def run() -> dict:
         },
         "lsc_event_count": int(len(events)),
         "strategy_a_ops": a_stats,
+        "regime_decisions": a_stats.get("regime_decisions", []),
         "warnings": [
+            "Strategy A picks stock-type sleeves each quarter from SPY regime (trend/vol) + sector relative strength, then runs residual momentum inside that sleeve.",
             "Strategy B is a daily sweep/reclaim proxy — not the full 5m ICT confluence engine yet.",
             "This decision_status is interim (no nested walk-forward). Treat as research, not capital deployment.",
             (
-                f"Strat A tech trade share {a_stats['tech_trade_share']:.1%} "
-                f"({'OK' if tech_ok else 'BELOW'} ≥{a_params['min_tech_share']:.0%} target)."
+                f"Strat A trades/month {a_stats['trades_per_month']:.1f} "
+                f"(weekly residual-momentum rebalance inside quarterly sleeves)."
             ),
             (
-                f"Strat A trades/month {a_stats['trades_per_month']:.1f} "
-                f"({'OK' if trade_rate_ok else 'OFF'} ~20 target band 15–28)."
+                f"Latest regime: {latest.get('regime', 'n/a')} · sleeves: "
+                f"{', '.join(latest.get('sectors') or [])}."
             ),
         ],
     }
@@ -188,7 +190,8 @@ def run() -> dict:
     print(f"Decision (interim): {decision}")
     print(
         f"Strat A ops: trades/mo={a_stats['trades_per_month']:.1f} "
-        f"tech_share={a_stats['tech_trade_share']:.1%} n_trades={a_stats['n_trades']}"
+        f"regime={latest.get('regime')} sectors={latest.get('sectors')} "
+        f"mix={a_stats.get('trade_sector_mix')}"
     )
     for m in metrics:
         print(
