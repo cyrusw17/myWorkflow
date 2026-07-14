@@ -245,8 +245,8 @@
     </section>
 
     <section class="panel">
-      <h2>Tech weight sweep — top 5 (drawdown-aware)</h2>
-      <p class="hint">Residual momentum swept from 25%→95% tech portfolio weight. Ranked by <code>0.55×Calmar + 0.45×Sharpe</code> with a soft max-drawdown penalty. Chart shows the top 5 equity curves.</p>
+      <h2>Top confluence survivors (drawdown-safe)</h2>
+      <p class="hint">20 overlays on residual momentum (Tech 80%). Hard-reject if historical MaxDD &gt; 35%. Only the top survivors are charted — ranked for account survival, not raw CAGR chase.</p>
       <div class="chart-box full">
         <canvas id="techSweepChart"></canvas>
       </div>
@@ -255,7 +255,7 @@
           <thead>
             <tr>
               <th>Rank</th>
-              <th>Tech weight</th>
+              <th>Strategy</th>
               <th>Score</th>
               <th>CAGR</th>
               <th>Sharpe</th>
@@ -266,6 +266,7 @@
           <tbody></tbody>
         </table>
       </div>
+      <p class="hint" id="confluenceTheses" style="margin-top:0.75rem"></p>
     </section>
 
     <section class="panel">
@@ -307,27 +308,29 @@
       const staleHours = (Date.now() - Date.parse(data.generated_at)) / 36e5;
       const stale = staleHours > 24 * 14;
       const a = (data.assumptions && data.assumptions.strategy_a) || {};
-      const selected = a.selected_from_sweep || (a.tech_weight != null ? `Tech ${Math.round(a.tech_weight * 100)}%` : "—");
-      const top = (data.tech_sweep && data.tech_sweep.top5 && data.tech_sweep.top5[0]) || null;
+      const conf = data.confluence_bakeoff || {};
+      const selected = a.selected_label || a.selected_confluence || "—";
+      const survivors = conf.survivors != null ? `${conf.survivors}/${conf.tested}` : "—";
       el.innerHTML = `
         <div class="badge ${stale ? "warn" : "ok"}"><strong>${stale ? "Data may be stale" : "Results loaded"}</strong> · ${new Date(data.generated_at).toUTCString()}</div>
         <div class="badge"><strong>Decision</strong> · ${data.decision_status}</div>
-        <div class="badge"><strong>Source</strong> · ${data.data_source}</div>
-        <div class="badge"><strong>LSC events</strong> · ${data.lsc_event_count}</div>
-        <div class="badge ok"><strong>A tech weight</strong> · ${selected}</div>
-        <div class="badge"><strong>A score</strong> · ${top ? Number(top.score).toFixed(3) : (a.selected_score != null ? Number(a.selected_score).toFixed(3) : "—")}</div>
+        <div class="badge"><strong>Survivors</strong> · ${survivors} (MaxDD≤35%)</div>
+        <div class="badge ok"><strong>Strat A</strong> · ${selected}</div>
+        <div class="badge"><strong>Score</strong> · ${a.selected_score != null ? Number(a.selected_score).toFixed(3) : "—"}</div>
       `;
     }
 
     function renderTechSweep(data) {
-      const sweep = data.tech_sweep || {};
-      const top5 = sweep.top5 || [];
+      const conf = data.confluence_bakeoff || {};
+      const top = conf.top || [];
       const body = document.querySelector("#techSweepTable tbody");
-      if (!top5.length) {
-        body.innerHTML = `<tr><td colspan="7">No tech sweep results.</td></tr>`;
+      const theses = document.getElementById("confluenceTheses");
+      if (!top.length) {
+        body.innerHTML = `<tr><td colspan="7">No confluence results.</td></tr>`;
+        if (theses) theses.textContent = "";
         return;
       }
-      body.innerHTML = top5.map((r) => `
+      body.innerHTML = top.map((r) => `
         <tr>
           <td>#${r.rank}</td>
           <td>${r.label}</td>
@@ -338,10 +341,13 @@
           <td class="num">${num(r.calmar)}</td>
         </tr>
       `).join("");
+      if (theses) {
+        theses.innerHTML = top.map((r) => `<strong>#${r.rank}</strong> ${r.thesis}`).join("<br/>");
+      }
 
-      const firstKey = top5[0].curve_key;
+      const firstKey = top[0].curve_key;
       const labels = ((data.curves[firstKey] || data.curves.strat_a) || []).map((p) => p.date);
-      const datasets = top5.map((r, i) => {
+      const datasets = top.map((r, i) => {
         const pts = data.curves[r.curve_key] || [];
         return {
           label: `#${r.rank} ${r.label}`,
@@ -547,9 +553,10 @@
       const items = [
         `Cost model: ${a.cost_bps_per_turnover_or_entry} bps per turnover/entry.`,
         `Universe: ${data.universe.join(", ")}.`,
-        `A params: tech-weight residual momentum · beta L=${sa.lookback_beta}, W=${sa.formation}, rebalance every ${sa.rebalance_every}d, tech sleeve names=${sa.n_tech}, other=${sa.n_other}.`,
-        `A selected: ${sa.selected_from_sweep || "—"} (score=${sa.selected_score != null ? Number(sa.selected_score).toFixed(3) : "—"}).`,
-        `A score method: ${sa.score_method || (data.tech_sweep && data.tech_sweep.score_method) || "—"}.`,
+        `A params: residual mom Tech ${Math.round((sa.base_tech_weight || sa.tech_weight || 0.8) * 100)}% + confluence overlays · beta L=${sa.lookback_beta}, W=${sa.formation}.`,
+        `A selected: ${sa.selected_label || "—"} (score=${sa.selected_score != null ? Number(sa.selected_score).toFixed(3) : "—"}).`,
+        `A score method: ${sa.score_method || "—"}.`,
+        `Confluences: ${sa.confluences_tested || 20} tested · survivors ${sa.survivors != null ? sa.survivors : "—"}.`,
         `B params: pool=${a.strategy_b.lookback_pool}d, hold=${a.strategy_b.hold_days}d — ${a.strategy_b.note}`,
         ...(data.warnings || []),
       ];
