@@ -6,19 +6,19 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.confluences import CONFLUENCES, apply_confluence, catalog_meta, survival_score
 from src.data import fetch_ohlc, load_universe
 from src.metrics import equity_from_returns, summarize, vol_target_returns
-from src.strategies_a import TECH_TICKERS, drawdown_aware_score, residual_momentum_returns
+from src.strategies_a import TECH_TICKERS, residual_momentum_returns
 from src.strategies_b import lsc_proxy_returns
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE_DATA = ROOT / "site" / "data"
 EVENTS = ROOT / "outputs" / "lsc_events.csv"
-SWEEP_OUT = ROOT / "outputs" / "tech_weight_sweep.json"
+CONF_OUT = ROOT / "outputs" / "confluence_bakeoff.json"
 
 UNIVERSE = [
     "SPY",
-    # Technology
     "XLK",
     "QQQ",
     "AAPL",
@@ -39,7 +39,6 @@ UNIVERSE = [
     "AMZN",
     "MU",
     "NOW",
-    # Non-tech diversifiers
     "IWM",
     "XLF",
     "XLE",
@@ -66,16 +65,18 @@ UNIVERSE = [
     "BA",
 ]
 
-# Dense sweep 25% → 95% inclusive.
-TECH_WEIGHTS = [round(x / 100.0, 2) for x in range(25, 100, 5)]  # 25,30,...,95
+# Locked from prior drawdown-aware tech sweep.
+BASE_TECH_WEIGHT = 0.80
+HARD_MAX_DD = 0.35  # retail survival line — reject worse
+TOP_N_SHOW = 4
 
 
 def _curve(rets: pd.Series) -> list[dict]:
     eq = equity_from_returns(rets)
-    out = []
-    for dt, val in eq.items():
-        out.append({"date": dt.strftime("%Y-%m-%d"), "equity": round(float(val), 6)})
-    return out
+    return [
+        {"date": dt.strftime("%Y-%m-%d"), "equity": round(float(val), 6)}
+        for dt, val in eq.items()
+    ]
 
 
 def run() -> dict:
@@ -94,46 +95,66 @@ def run() -> dict:
         "n_other": 4,
         "rebalance_every": 5,
         "cost_bps": 5.0,
+        "tech_weight": BASE_TECH_WEIGHT,
     }
 
-    sweep_rows: list[dict] = []
-    curves_by_weight: dict[str, list[dict]] = {}
-    rets_by_weight: dict[float, pd.Series] = {}
+    base_rets, base_stats = residual_momentum_returns(prices, **base_params)
+    base_metrics = summarize(base_rets, "Base Resid Mom Tech 80%")
+    base_score = survival_score(base_metrics, hard_max_dd=HARD_MAX_DD)
+    print(
+        f"BASE: score={base_score:.3f} Sharpe={base_metrics['sharpe']:.2f} "
+        f"CAGR={base_metrics['cagr']:.2%} MaxDD={base_metrics['max_dd']:.2%}"
+    )
 
-    for w in TECH_WEIGHTS:
-        a_rets, a_stats = residual_momentum_returns(prices, tech_weight=w, **base_params)
-        label = f"Tech {int(round(w * 100))}%"
-        metrics = summarize(a_rets, label)
-        score = drawdown_aware_score(metrics)
-        key = f"tech_{int(round(w * 100)):02d}"
-        row = {
-            "tech_weight": w,
-            "label": label,
-            "curve_key": key,
-            "score": round(score, 6),
-            "metrics": metrics,
-            "ops": {
-                "trades_per_month": round(a_stats["trades_per_month"], 2),
-                "tech_trade_share": round(a_stats["tech_trade_share"], 4),
-                "n_trades": a_stats["n_trades"],
-            },
+    rows: list[dict] = []
+    curves: dict[str, list[dict]] = {}
+    rets_map: dict[str, pd.Series] = {"base": base_rets}
+
+    # Include naked base as candidate 0
+    rows.append(
+        {
+            "id": "base",
+            "label": "Base Tech 80% (no confluence)",
+            "thesis": "Residual momentum with 80% tech long sleeve; no overlay.",
+            "score": round(base_score, 6),
+            "survived": base_score > -500,
+            "metrics": base_metrics,
+            "curve_key": "conf_base",
         }
-        sweep_rows.append(row)
-        curves_by_weight[key] = _curve(a_rets)
-        rets_by_weight[w] = a_rets
+    )
+    curves["conf_base"] = _curve(base_rets)
+
+    for conf in CONFLUENCES:
+        rets = apply_confluence(conf.id, base_rets, prices)
+        metrics = summarize(rets, conf.name)
+        score = survival_score(metrics, hard_max_dd=HARD_MAX_DD)
+        key = f"conf_{conf.id}"
+        row = {
+            "id": conf.id,
+            "label": conf.name,
+            "thesis": conf.thesis,
+            "score": round(score, 6),
+            "survived": score > -500,
+            "metrics": metrics,
+            "curve_key": key,
+        }
+        rows.append(row)
+        curves[key] = _curve(rets)
+        rets_map[conf.id] = rets
+        flag = "OK" if row["survived"] else "REJECT"
         print(
-            f"{label}: score={score:.3f} Sharpe={metrics['sharpe']:.2f} "
-            f"CAGR={metrics['cagr']:.2%} MaxDD={metrics['max_dd']:.2%} Calmar={metrics['calmar']:.2f}"
+            f"{flag} {conf.id}: score={score:.3f} Sharpe={metrics['sharpe']:.2f} "
+            f"CAGR={metrics['cagr']:.2%} MaxDD={metrics['max_dd']:.2%}"
         )
 
-    # Rank by drawdown-aware score; top 5 for the comparison chart.
-    ranked = sorted(sweep_rows, key=lambda r: r["score"], reverse=True)
+    ranked = sorted(rows, key=lambda r: r["score"], reverse=True)
     for i, row in enumerate(ranked, start=1):
         row["rank"] = i
-    top5 = ranked[:5]
-    best = top5[0]
-    best_w = best["tech_weight"]
-    a_rets = rets_by_weight[best_w]
+
+    survivors = [r for r in ranked if r["survived"]]
+    top = (survivors or ranked)[:TOP_N_SHOW]
+    best = top[0]
+    a_rets = rets_map["base" if best["id"] == "base" else best["id"]]
 
     b_rets, events = lsc_proxy_returns(spy_ohlc)
     events.to_csv(EVENTS, index=False)
@@ -149,42 +170,58 @@ def run() -> dict:
     metrics = [
         summarize(spy_rets, "SPY B&H"),
         summarize(spy_vm, "SPY vol-match"),
-        summarize(a_rets, f"Strat A Resid Mom ({best['label']})"),
+        summarize(a_rets, f"Strat A · {best['label']}"),
         summarize(b_rets, "Strat B LSC proxy"),
     ]
 
-    sharpes = {m["name"]: m["sharpe"] for m in metrics}
-    eligible = []
-    if metrics[2]["sharpe"] > metrics[1]["sharpe"]:
-        eligible.append("A")
-    if metrics[3]["sharpe"] > metrics[0]["sharpe"] and metrics[3]["sharpe"] > 0:
-        eligible.append("B")
-    if eligible == ["A"]:
+    if metrics[2]["sharpe"] > metrics[1]["sharpe"] and abs(metrics[2]["max_dd"]) <= HARD_MAX_DD:
         decision = "SHIP_A_PAPER"
-    elif eligible == ["B"]:
+    elif metrics[3]["sharpe"] > metrics[0]["sharpe"] and metrics[3]["sharpe"] > 0:
         decision = "SHIP_B_PAPER"
-    elif set(eligible) == {"A", "B"}:
-        decision = "SHIP_ENSEMBLE_PAPER"
     else:
         decision = "KILL_REDESIGN"
 
-    top5_payload = []
-    for row in top5:
-        top5_payload.append(
-            {
-                "rank": row["rank"],
-                "label": row["label"],
-                "tech_weight": row["tech_weight"],
-                "score": row["score"],
-                "curve_key": row["curve_key"],
-                "cagr": row["metrics"]["cagr"],
-                "sharpe": row["metrics"]["sharpe"],
-                "max_dd": row["metrics"]["max_dd"],
-                "calmar": row["metrics"]["calmar"],
-            }
-        )
+    top_payload = [
+        {
+            "rank": r["rank"],
+            "id": r["id"],
+            "label": r["label"],
+            "thesis": r["thesis"],
+            "score": r["score"],
+            "survived": r["survived"],
+            "curve_key": r["curve_key"],
+            "cagr": r["metrics"]["cagr"],
+            "sharpe": r["metrics"]["sharpe"],
+            "sortino": r["metrics"]["sortino"],
+            "max_dd": r["metrics"]["max_dd"],
+            "calmar": r["metrics"]["calmar"],
+        }
+        for r in top
+    ]
 
-    SWEEP_OUT.write_text(json.dumps({"ranked": ranked, "top5": top5_payload}, indent=2, default=str))
+    CONF_OUT.write_text(
+        json.dumps(
+            {
+                "hard_max_dd": HARD_MAX_DD,
+                "base_tech_weight": BASE_TECH_WEIGHT,
+                "ranked": [
+                    {
+                        "rank": r["rank"],
+                        "id": r["id"],
+                        "label": r["label"],
+                        "score": r["score"],
+                        "survived": r["survived"],
+                        "max_dd": r["metrics"]["max_dd"],
+                        "sharpe": r["metrics"]["sharpe"],
+                        "cagr": r["metrics"]["cagr"],
+                    }
+                    for r in ranked
+                ],
+                "top": top_payload,
+            },
+            indent=2,
+        )
+    )
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -194,14 +231,21 @@ def run() -> dict:
             "start": "2018-01-01",
             "cost_bps_per_turnover_or_entry": 5.0,
             "strategy_a": {
-                "mode": "tech_weight_residual_momentum",
+                "mode": "residual_momentum_plus_confluence",
                 **{k: v for k, v in base_params.items() if k != "cost_bps"},
-                "tech_weight": best_w,
                 "tech_tickers": sorted(t for t in TECH_TICKERS if t in UNIVERSE),
-                "sweep_weights": TECH_WEIGHTS,
-                "score_method": "0.55*Calmar + 0.45*Sharpe, soft DD penalty if |maxDD|>25%",
-                "selected_from_sweep": best["label"],
+                "base_tech_weight": BASE_TECH_WEIGHT,
+                "selected_confluence": best["id"],
+                "selected_label": best["label"],
                 "selected_score": best["score"],
+                "hard_max_dd": HARD_MAX_DD,
+                "score_method": (
+                    f"survival: reject |MaxDD|>{int(HARD_MAX_DD*100)}%; else "
+                    "0.40*Calmar + 0.30*Sortino + 0.20*Sharpe + 0.10*CAGR_term"
+                ),
+                "confluences_tested": len(CONFLUENCES),
+                "candidates_including_base": len(rows),
+                "survivors": len(survivors),
             },
             "strategy_b": {
                 "note": "Daily LSC proxy until 5m/1H stack is wired",
@@ -218,35 +262,23 @@ def run() -> dict:
             "spy_vol_match": _curve(spy_vm),
             "strat_a": _curve(a_rets),
             "strat_b": _curve(b_rets),
-            **{row["curve_key"]: curves_by_weight[row["curve_key"]] for row in top5},
+            **{r["curve_key"]: curves[r["curve_key"]] for r in top},
         },
-        "tech_sweep": {
-            "weights_tested": TECH_WEIGHTS,
-            "score_method": "0.55*Calmar + 0.45*Sharpe with soft max-DD penalty",
-            "ranked": [
-                {
-                    "rank": r["rank"],
-                    "label": r["label"],
-                    "tech_weight": r["tech_weight"],
-                    "score": r["score"],
-                    "cagr": r["metrics"]["cagr"],
-                    "sharpe": r["metrics"]["sharpe"],
-                    "max_dd": r["metrics"]["max_dd"],
-                    "calmar": r["metrics"]["calmar"],
-                    "curve_key": r["curve_key"] if r["rank"] <= 5 else None,
-                }
-                for r in ranked
-            ],
-            "top5": top5_payload,
+        "confluence_bakeoff": {
+            "hard_max_dd": HARD_MAX_DD,
+            "catalog": catalog_meta(),
+            "survivors": len(survivors),
+            "tested": len(rows),
+            "top": top_payload,
         },
         "lsc_event_count": int(len(events)),
         "warnings": [
-            "Strat A is residual momentum with a fixed tech portfolio weight (swept 25–95%).",
-            "Winner selected by drawdown-aware score: 0.55*Calmar + 0.45*Sharpe (soft penalty if |maxDD|>25%).",
+            f"Base book = residual momentum @ {int(BASE_TECH_WEIGHT*100)}% tech (long-only).",
+            f"Tested {len(CONFLUENCES)} confluence overlays + base; survivors keep |MaxDD| ≤ {int(HARD_MAX_DD*100)}%.",
+            "Only the top surviving confluence strategies are charted (account-survival ranking).",
             "Strategy B is a daily sweep/reclaim proxy — not the full 5m ICT confluence engine yet.",
-            "This decision_status is interim (no nested walk-forward). Treat as research, not capital deployment.",
-            f"Selected Strat A tech weight: {best['label']} (score={best['score']:.3f}).",
-            "Top 5 tech-weight variants are plotted on the dedicated comparison chart.",
+            "Interim decision only — not live capital advice. Past DD ≠ future DD.",
+            f"Selected Strat A: {best['label']} (score={best['score']:.3f}, MaxDD={best['metrics']['max_dd']:.1%}).",
         ],
     }
 
@@ -254,12 +286,12 @@ def run() -> dict:
     out.write_text(json.dumps(payload, indent=2))
     print(f"Wrote {out}")
     print(f"Decision (interim): {decision}")
-    print(f"Selected: {best['label']} score={best['score']:.3f}")
-    print("Top 5:")
-    for row in top5:
-        m = row["metrics"]
+    print(f"Survivors: {len(survivors)}/{len(rows)} (hard MaxDD ≤ {HARD_MAX_DD:.0%})")
+    print("Top shown:")
+    for r in top:
+        m = r["metrics"]
         print(
-            f"  #{row['rank']} {row['label']}: score={row['score']:.3f} "
+            f"  #{r['rank']} {r['label']}: score={r['score']:.3f} "
             f"Sharpe={m['sharpe']:.2f} CAGR={m['cagr']:.2%} MaxDD={m['max_dd']:.2%}"
         )
     for m in metrics:
