@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-14T18:22:55.037340+00:00",
+  "generated_at": "2026-07-14T19:37:08.904023+00:00",
   "data_source": "yahoo finance chart API (daily OHLC, cached)",
   "universe": [
     "SPY",
@@ -90,7 +90,8 @@
       "score_method": "survival: reject |MaxDD|>35%; else 0.40*Calmar + 0.30*Sortino + 0.20*Sharpe + 0.10*CAGR_term",
       "confluences_tested": 20,
       "candidates_including_base": 21,
-      "survivors": 11
+      "survivors": 11,
+      "trade_confidence_note": "Per-trade confidence is background metadata only; it does not change which trades are taken or equity curves."
     },
     "strategy_b": {
       "note": "Daily LSC proxy until 5m/1H stack is wired",
@@ -68906,11 +68907,872 @@
       }
     ]
   },
+  "trade_confidence": {
+    "summary": {
+      "note": "Background only \u2014 does not affect trade selection, sizing, or equity curves.",
+      "method": "0\u2013100 blend of sleeve rank edge, residual z-score, cross-sectional dispersion, persistence vs median, and soft SPY regime backdrop",
+      "mean": 74.91,
+      "median": 75.1,
+      "p25": 67.75,
+      "p75": 81.9,
+      "min": 48.6,
+      "max": 96.1,
+      "buckets": {
+        "low_<40": 0,
+        "mid_40_70": 237,
+        "high_>=70": 534
+      }
+    },
+    "n_trades": 771,
+    "recent_trades": [
+      {
+        "date": "2025-07-11",
+        "ticker": "CAT",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 83.9,
+        "confidence_components": {
+          "rank_edge": 95.7,
+          "score_z": 60.3,
+          "dispersion": 67.5,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-07-18",
+        "ticker": "NVDA",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 78.0,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 54.8,
+          "dispersion": 40.6,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-07-18",
+        "ticker": "JPM",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 66.0,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 34.0,
+          "dispersion": 40.6,
+          "persistence": 68.9,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-07-25",
+        "ticker": "JNJ",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 69.4,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 40.8,
+          "dispersion": 43.8,
+          "persistence": 77.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-08-01",
+        "ticker": "JPM",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 71.0,
+        "confidence_components": {
+          "rank_edge": 91.3,
+          "score_z": 36.9,
+          "dispersion": 52.8,
+          "persistence": 76.4,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-08-08",
+        "ticker": "BA",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 71.7,
+        "confidence_components": {
+          "rank_edge": 91.3,
+          "score_z": 37.5,
+          "dispersion": 55.6,
+          "persistence": 77.4,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-08-15",
+        "ticker": "XLU",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 68.9,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 36.8,
+          "dispersion": 49.0,
+          "persistence": 74.8,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-08-15",
+        "ticker": "GLD",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 71.5,
+        "confidence_components": {
+          "rank_edge": 91.3,
+          "score_z": 39.6,
+          "dispersion": 49.0,
+          "persistence": 78.8,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-08-22",
+        "ticker": "IWM",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 69.3,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 32.5,
+          "dispersion": 55.4,
+          "persistence": 78.4,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-08-22",
+        "ticker": "JPM",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 70.6,
+        "confidence_components": {
+          "rank_edge": 91.3,
+          "score_z": 32.5,
+          "dispersion": 55.4,
+          "persistence": 78.4,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-08-29",
+        "ticker": "GOOGL",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 83.1,
+        "confidence_components": {
+          "rank_edge": 89.5,
+          "score_z": 70.2,
+          "dispersion": 38.1,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-08-29",
+        "ticker": "XOM",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 66.5,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 36.6,
+          "dispersion": 38.1,
+          "persistence": 70.2,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-09-08",
+        "ticker": "AVGO",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 86.0,
+        "confidence_components": {
+          "rank_edge": 89.5,
+          "score_z": 69.7,
+          "dispersion": 58.2,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-09-08",
+        "ticker": "GLD",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 78.8,
+        "confidence_components": {
+          "rank_edge": 91.3,
+          "score_z": 52.1,
+          "dispersion": 58.2,
+          "persistence": 97.4,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-09-08",
+        "ticker": "HD",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 76.3,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 49.6,
+          "dispersion": 58.2,
+          "persistence": 93.9,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-09-22",
+        "ticker": "INTC",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 87.3,
+        "confidence_components": {
+          "rank_edge": 89.5,
+          "score_z": 83.6,
+          "dispersion": 44.0,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-09-29",
+        "ticker": "AAPL",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 81.0,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 68.6,
+          "dispersion": 37.4,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-09-29",
+        "ticker": "UNH",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 72.3,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 48.1,
+          "dispersion": 37.4,
+          "persistence": 90.4,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-10-06",
+        "ticker": "MU",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 94.0,
+        "confidence_components": {
+          "rank_edge": 94.7,
+          "score_z": 100.0,
+          "dispersion": 50.6,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-10-13",
+        "ticker": "AMD",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 95.9,
+        "confidence_components": {
+          "rank_edge": 89.5,
+          "score_z": 100.0,
+          "dispersion": 74.6,
+          "persistence": 100.0,
+          "regime": 99.3
+        }
+      },
+      {
+        "date": "2025-11-10",
+        "ticker": "XOM",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 68.9,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 35.2,
+          "dispersion": 48.7,
+          "persistence": 79.1,
+          "regime": 99.1
+        }
+      },
+      {
+        "date": "2025-11-17",
+        "ticker": "JNJ",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 70.5,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 38.5,
+          "dispersion": 53.0,
+          "persistence": 80.6,
+          "regime": 98.3
+        }
+      },
+      {
+        "date": "2025-11-24",
+        "ticker": "AMAT",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 85.9,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 84.1,
+          "dispersion": 48.3,
+          "persistence": 100.0,
+          "regime": 96.0
+        }
+      },
+      {
+        "date": "2025-11-24",
+        "ticker": "XLV",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 69.6,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 41.4,
+          "dispersion": 48.3,
+          "persistence": 76.7,
+          "regime": 96.0
+        }
+      },
+      {
+        "date": "2025-12-02",
+        "ticker": "WMT",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 74.0,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 44.5,
+          "dispersion": 60.6,
+          "persistence": 88.3,
+          "regime": 96.4
+        }
+      },
+      {
+        "date": "2025-12-09",
+        "ticker": "AMD",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 84.5,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 77.7,
+          "dispersion": 47.2,
+          "persistence": 100.0,
+          "regime": 98.0
+        }
+      },
+      {
+        "date": "2025-12-23",
+        "ticker": "XLV",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 80.0,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 48.2,
+          "dispersion": 79.3,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2025-12-31",
+        "ticker": "GOOGL",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 92.4,
+        "confidence_components": {
+          "rank_edge": 89.5,
+          "score_z": 80.7,
+          "dispersion": 82.6,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-01-08",
+        "ticker": "INTC",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 77.1,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 42.6,
+          "dispersion": 60.7,
+          "persistence": 93.9,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-01-08",
+        "ticker": "WMT",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 77.8,
+        "confidence_components": {
+          "rank_edge": 91.3,
+          "score_z": 45.6,
+          "dispersion": 60.7,
+          "persistence": 99.2,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-01-15",
+        "ticker": "XOM",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 84.0,
+        "confidence_components": {
+          "rank_edge": 100.0,
+          "score_z": 57.8,
+          "dispersion": 63.6,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-01-23",
+        "ticker": "GLD",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 81.9,
+        "confidence_components": {
+          "rank_edge": 95.7,
+          "score_z": 58.4,
+          "dispersion": 57.1,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-01-30",
+        "ticker": "TXN",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 86.8,
+        "confidence_components": {
+          "rank_edge": 89.5,
+          "score_z": 68.9,
+          "dispersion": 64.9,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-02-06",
+        "ticker": "INTC",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 82.1,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 64.1,
+          "dispersion": 58.2,
+          "persistence": 95.5,
+          "regime": 98.6
+        }
+      },
+      {
+        "date": "2026-02-06",
+        "ticker": "WMT",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 79.0,
+        "confidence_components": {
+          "rank_edge": 91.3,
+          "score_z": 58.4,
+          "dispersion": 58.2,
+          "persistence": 89.6,
+          "regime": 98.6
+        }
+      },
+      {
+        "date": "2026-02-23",
+        "ticker": "GLD",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 84.2,
+        "confidence_components": {
+          "rank_edge": 95.7,
+          "score_z": 59.5,
+          "dispersion": 71.1,
+          "persistence": 100.0,
+          "regime": 99.9
+        }
+      },
+      {
+        "date": "2026-03-02",
+        "ticker": "XLE",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 82.0,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 61.9,
+          "dispersion": 70.4,
+          "persistence": 100.0,
+          "regime": 99.0
+        }
+      },
+      {
+        "date": "2026-03-09",
+        "ticker": "CSCO",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 68.6,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 26.8,
+          "dispersion": 60.7,
+          "persistence": 65.5,
+          "regime": 98.2
+        }
+      },
+      {
+        "date": "2026-03-16",
+        "ticker": "INTC",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 85.5,
+        "confidence_components": {
+          "rank_edge": 89.5,
+          "score_z": 63.3,
+          "dispersion": 65.7,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-03-23",
+        "ticker": "JNJ",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 62.5,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 39.9,
+          "dispersion": 50.9,
+          "persistence": 87.8,
+          "regime": 37.4
+        }
+      },
+      {
+        "date": "2026-04-14",
+        "ticker": "AMD",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 84.3,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 77.2,
+          "dispersion": 55.4,
+          "persistence": 100.0,
+          "regime": 89.6
+        }
+      },
+      {
+        "date": "2026-04-21",
+        "ticker": "TXN",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 84.3,
+        "confidence_components": {
+          "rank_edge": 89.5,
+          "score_z": 77.5,
+          "dispersion": 41.8,
+          "persistence": 100.0,
+          "regime": 92.1
+        }
+      },
+      {
+        "date": "2026-04-21",
+        "ticker": "KO",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 67.5,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 40.5,
+          "dispersion": 41.8,
+          "persistence": 75.0,
+          "regime": 92.1
+        }
+      },
+      {
+        "date": "2026-04-28",
+        "ticker": "XLU",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 67.7,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 34.3,
+          "dispersion": 50.6,
+          "persistence": 73.0,
+          "regime": 96.6
+        }
+      },
+      {
+        "date": "2026-05-05",
+        "ticker": "UNH",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 87.4,
+        "confidence_components": {
+          "rank_edge": 100.0,
+          "score_z": 75.4,
+          "dispersion": 57.0,
+          "persistence": 100.0,
+          "regime": 99.9
+        }
+      },
+      {
+        "date": "2026-05-12",
+        "ticker": "QCOM",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 92.1,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 99.1,
+          "dispersion": 60.6,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-05-19",
+        "ticker": "CSCO",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 91.2,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 87.0,
+          "dispersion": 74.4,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-05-19",
+        "ticker": "KO",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 65.9,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 17.3,
+          "dispersion": 74.4,
+          "persistence": 62.1,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-05-27",
+        "ticker": "QCOM",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 91.8,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 91.6,
+          "dispersion": 70.7,
+          "persistence": 100.0,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-05-27",
+        "ticker": "V",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 64.1,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 13.9,
+          "dispersion": 70.7,
+          "persistence": 59.6,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-06-03",
+        "ticker": "CAT",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 61.9,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 16.8,
+          "dispersion": 50.4,
+          "persistence": 60.6,
+          "regime": 100.0
+        }
+      },
+      {
+        "date": "2026-06-10",
+        "ticker": "CSCO",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 86.1,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 76.2,
+          "dispersion": 60.9,
+          "persistence": 100.0,
+          "regime": 97.8
+        }
+      },
+      {
+        "date": "2026-06-17",
+        "ticker": "QCOM",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 84.8,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 76.6,
+          "dispersion": 54.7,
+          "persistence": 100.0,
+          "regime": 94.5
+        }
+      },
+      {
+        "date": "2026-06-17",
+        "ticker": "KO",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 63.6,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 19.7,
+          "dispersion": 54.7,
+          "persistence": 68.2,
+          "regime": 94.5
+        }
+      },
+      {
+        "date": "2026-06-17",
+        "ticker": "BAC",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 68.2,
+        "confidence_components": {
+          "rank_edge": 91.3,
+          "score_z": 25.5,
+          "dispersion": 54.7,
+          "persistence": 80.5,
+          "regime": 94.5
+        }
+      },
+      {
+        "date": "2026-06-25",
+        "ticker": "TXN",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 81.6,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 67.6,
+          "dispersion": 49.0,
+          "persistence": 100.0,
+          "regime": 94.2
+        }
+      },
+      {
+        "date": "2026-07-02",
+        "ticker": "AMAT",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 81.7,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 66.7,
+          "dispersion": 52.6,
+          "persistence": 100.0,
+          "regime": 92.5
+        }
+      },
+      {
+        "date": "2026-07-02",
+        "ticker": "V",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 65.4,
+        "confidence_components": {
+          "rank_edge": 87.0,
+          "score_z": 24.6,
+          "dispersion": 52.6,
+          "persistence": 76.0,
+          "regime": 92.5
+        }
+      },
+      {
+        "date": "2026-07-10",
+        "ticker": "TXN",
+        "is_tech": true,
+        "weight": 0.2,
+        "confidence": 84.0,
+        "confidence_components": {
+          "rank_edge": 84.2,
+          "score_z": 72.3,
+          "dispersion": 55.8,
+          "persistence": 100.0,
+          "regime": 95.3
+        }
+      },
+      {
+        "date": "2026-07-10",
+        "ticker": "JNJ",
+        "is_tech": false,
+        "weight": 0.05,
+        "confidence": 68.6,
+        "confidence_components": {
+          "rank_edge": 91.3,
+          "score_z": 27.6,
+          "dispersion": 55.8,
+          "persistence": 77.5,
+          "regime": 95.3
+        }
+      }
+    ]
+  },
   "lsc_event_count": 330,
   "warnings": [
     "Base book = residual momentum @ 80% tech (long-only).",
     "Tested 20 confluence overlays + base; survivors keep |MaxDD| \u2264 35%.",
     "Only the top surviving confluence strategies are charted (account-survival ranking).",
+    "Trade confidence scores are diagnostic metadata only \u2014 they do not alter trades or charts.",
     "Strategy B is a daily sweep/reclaim proxy \u2014 not the full 5m ICT confluence engine yet.",
     "Interim decision only \u2014 not live capital advice. Past DD \u2260 future DD.",
     "Selected Strat A: Anti-crowd corr (score=0.628, MaxDD=-19.8%)."

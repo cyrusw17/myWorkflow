@@ -270,6 +270,29 @@
     </section>
 
     <section class="panel">
+      <h2>Trade confidence (background only)</h2>
+      <p class="hint">Diagnostic 0–100 scores attached to every residual-momentum entry. These do <em>not</em> change which trades are taken, position size, or any equity chart.</p>
+      <div class="row" id="confidenceBadges"></div>
+      <div style="overflow-x:auto; margin-top:0.75rem">
+        <table id="confidenceTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Ticker</th>
+              <th>Sleeve</th>
+              <th>Weight</th>
+              <th>Confidence</th>
+              <th>Rank</th>
+              <th>Score z</th>
+              <th>Regime</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Assumptions & warnings</h2>
       <ul class="warnings" id="warnings"></ul>
     </section>
@@ -603,6 +626,47 @@
       ul.innerHTML = items.map(t => `<li>${t}</li>`).join("");
     }
 
+    function renderTradeConfidence(data) {
+      const block = data.trade_confidence || {};
+      const summary = block.summary || {};
+      const trades = (block.recent_trades || []).slice().reverse();
+      const badges = document.getElementById("confidenceBadges");
+      const body = document.querySelector("#confidenceTable tbody");
+      if (!badges || !body) return;
+
+      const buckets = summary.buckets || {};
+      badges.innerHTML = `
+        <div class="badge"><strong>Trades scored</strong> · ${block.n_trades ?? "—"}</div>
+        <div class="badge ok"><strong>Mean conf</strong> · ${summary.mean != null ? Number(summary.mean).toFixed(1) : "—"}</div>
+        <div class="badge"><strong>Median</strong> · ${summary.median != null ? Number(summary.median).toFixed(1) : "—"}</div>
+        <div class="badge"><strong>High ≥70</strong> · ${buckets["high_>=70"] ?? "—"}</div>
+        <div class="badge"><strong>Mid 40–70</strong> · ${buckets.mid_40_70 ?? "—"}</div>
+        <div class="badge warn"><strong>Low &lt;40</strong> · ${buckets["low_<40"] ?? "—"}</div>
+      `;
+
+      if (!trades.length) {
+        body.innerHTML = `<tr><td colspan="8">No scored trades yet.</td></tr>`;
+        return;
+      }
+      body.innerHTML = trades.map((t) => {
+        const c = t.confidence_components || {};
+        const conf = Number(t.confidence);
+        const klass = conf >= 70 ? "up" : conf < 40 ? "down" : "";
+        return `
+          <tr>
+            <td>${t.date}</td>
+            <td>${t.ticker}</td>
+            <td>${t.is_tech ? "tech" : "other"}</td>
+            <td class="num">${t.weight != null ? (100 * Number(t.weight)).toFixed(1) + "%" : "—"}</td>
+            <td class="num"><strong class="${klass}">${Number.isFinite(conf) ? conf.toFixed(1) : "—"}</strong></td>
+            <td class="num">${c.rank_edge != null ? Number(c.rank_edge).toFixed(0) : "—"}</td>
+            <td class="num">${c.score_z != null ? Number(c.score_z).toFixed(0) : "—"}</td>
+            <td class="num">${c.regime != null ? Number(c.regime).toFixed(0) : "—"}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
     load()
       .then((data) => {
         const books = buildChartBooks(data);
@@ -612,6 +676,7 @@
         renderWindows(data, books);
         renderFullChart(data, books);
         renderTable(data.metrics);
+        renderTradeConfidence(data);
         renderWarnings(data);
       })
       .catch((err) => {

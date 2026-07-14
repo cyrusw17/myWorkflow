@@ -31,6 +31,96 @@ def _ranked(score_row: pd.Series) -> list[str]:
     return score_row.sort_values(ascending=False).index.tolist()
 
 
+def _clip01(x: float) -> float:
+    return float(min(1.0, max(0.0, x)))
+
+
+def _trade_confidence(
+    ticker: str,
+    score_row: pd.Series,
+    sleeve_ranked: list[str],
+    spy_px: pd.Series,
+    dt: pd.Timestamp,
+    is_tech: bool,
+) -> dict:
+    """
+    Background confidence only — never used to select/size trades.
+
+    Returns 0–100 score plus component breakdown.
+    """
+    s = score_row.dropna()
+    if ticker not in s.index or s.empty:
+        return {
+            "confidence": 0.0,
+            "components": {
+                "rank_edge": 0.0,
+                "score_z": 0.0,
+                "dispersion": 0.0,
+                "persistence": 0.0,
+                "regime": 0.0,
+            },
+        }
+
+    # 1) Rank edge inside its sleeve list (top picks = higher confidence)
+    if ticker in sleeve_ranked and len(sleeve_ranked) > 1:
+        rank_pos = sleeve_ranked.index(ticker)
+        rank_edge = 1.0 - (rank_pos / max(len(sleeve_ranked) - 1, 1))
+    else:
+        rank_edge = 0.5
+
+    # 2) Cross-sectional z of residual score
+    mu = float(s.mean())
+    sd = float(s.std()) or 1e-9
+    z = (float(s.loc[ticker]) - mu) / sd
+    score_z = _clip01((z + 0.5) / 2.5)  # z≈-0.5→0, z≈2→1
+
+    # 3) Dispersion: how separated top quartile is from median (opportunity clarity)
+    q75 = float(s.quantile(0.75))
+    med = float(s.median())
+    iqr = float(s.quantile(0.75) - s.quantile(0.25)) or 1e-9
+    dispersion = _clip01((q75 - med) / iqr)
+
+    # 4) Persistence proxy: ticker vs sleeve median (positive residual surplus)
+    persistence = _clip01(0.5 + (float(s.loc[ticker]) - med) / (2.0 * iqr))
+
+    # 5) Soft regime backdrop (does not gate trades)
+    if dt in spy_px.index:
+        loc = spy_px.index.get_loc(dt)
+        if isinstance(loc, slice):
+            loc = loc.start
+        i = int(loc)
+        window = spy_px.iloc[max(0, i - 199) : i + 1]
+        above_200 = float(spy_px.iloc[i] >= window.mean()) if len(window) >= 20 else 0.5
+        rets = spy_px.pct_change().iloc[max(0, i - 20) : i + 1]
+        vol = float(rets.std() * np.sqrt(252)) if len(rets) > 5 else 0.15
+        calm = _clip01(1.0 - max(vol - 0.12, 0.0) / 0.30)
+        regime = 0.6 * above_200 + 0.4 * calm
+    else:
+        regime = 0.5
+
+    # Tech sleeve slightly higher baseline context (informational only)
+    tech_boost = 0.03 if is_tech else 0.0
+
+    conf = 100.0 * _clip01(
+        0.30 * rank_edge
+        + 0.25 * score_z
+        + 0.15 * dispersion
+        + 0.15 * persistence
+        + 0.15 * regime
+        + tech_boost
+    )
+    return {
+        "confidence": round(conf, 1),
+        "components": {
+            "rank_edge": round(100.0 * rank_edge, 1),
+            "score_z": round(100.0 * score_z, 1),
+            "dispersion": round(100.0 * dispersion, 1),
+            "persistence": round(100.0 * persistence, 1),
+            "regime": round(100.0 * regime, 1),
+        },
+    }
+
+
 def residual_momentum_returns(
     prices: pd.DataFrame,
     spy_col: str = "SPY",
@@ -52,6 +142,9 @@ def residual_momentum_returns(
       - hold top `n_tech` tech + top `n_other` non-tech
       - assign total weight `tech_weight` evenly across tech names,
         and `1 - tech_weight` evenly across non-tech names
+
+    Each entry also receives a background confidence score that does NOT
+    affect selection, sizing, or returns.
     """
     tech = set(tech_tickers or TECH_TICKERS)
     tech_weight = float(np.clip(tech_weight, 0.0, 1.0))
@@ -67,6 +160,7 @@ def residual_momentum_returns(
 
     rets = np.log(prices / prices.shift(1))
     spy = rets[spy_col]
+    spy_px = prices[spy_col]
 
     betas = pd.DataFrame(index=rets.index, columns=cols, dtype=float)
     for c in cols:
@@ -116,11 +210,23 @@ def residual_momentum_returns(
 
         for t in new_w[new_w > 0].index:
             if float(weights.get(t, 0.0)) <= 0:
+                sleeve = tech_ranked if t in tech else other_ranked
+                conf = _trade_confidence(
+                    ticker=t,
+                    score_row=s,
+                    sleeve_ranked=sleeve,
+                    spy_px=spy_px,
+                    dt=dt,
+                    is_tech=t in tech,
+                )
                 trade_log.append(
                     {
                         "date": dt.strftime("%Y-%m-%d"),
                         "ticker": t,
                         "is_tech": t in tech,
+                        "weight": round(float(new_w.loc[t]), 6),
+                        "confidence": conf["confidence"],
+                        "confidence_components": conf["components"],
                     }
                 )
 
@@ -135,6 +241,7 @@ def residual_momentum_returns(
     months = years * 12.0
     n_trades = len(trade_log)
     n_tech_trades = sum(1 for t in trade_log if t["is_tech"])
+    conf_vals = [float(t["confidence"]) for t in trade_log]
     stats = {
         "mode": "tech_weight_residual_momentum",
         "tech_weight": tech_weight,
@@ -145,6 +252,25 @@ def residual_momentum_returns(
         "trades_per_month": (n_trades / months) if months > 0 else 0.0,
         "tech_trade_share": (n_tech_trades / n_trades) if n_trades else 0.0,
         "tech_universe": sorted(tech_cols),
+        "trade_log": trade_log,
+        "confidence": {
+            "note": "Background only — does not affect trade selection, sizing, or equity curves.",
+            "method": (
+                "0–100 blend of sleeve rank edge, residual z-score, cross-sectional "
+                "dispersion, persistence vs median, and soft SPY regime backdrop"
+            ),
+            "mean": round(float(np.mean(conf_vals)), 2) if conf_vals else None,
+            "median": round(float(np.median(conf_vals)), 2) if conf_vals else None,
+            "p25": round(float(np.percentile(conf_vals, 25)), 2) if conf_vals else None,
+            "p75": round(float(np.percentile(conf_vals, 75)), 2) if conf_vals else None,
+            "min": round(float(np.min(conf_vals)), 2) if conf_vals else None,
+            "max": round(float(np.max(conf_vals)), 2) if conf_vals else None,
+            "buckets": {
+                "low_<40": int(sum(1 for c in conf_vals if c < 40)),
+                "mid_40_70": int(sum(1 for c in conf_vals if 40 <= c < 70)),
+                "high_>=70": int(sum(1 for c in conf_vals if c >= 70)),
+            },
+        },
     }
     return port, stats
 

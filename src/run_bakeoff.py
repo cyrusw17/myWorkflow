@@ -99,12 +99,23 @@ def run() -> dict:
     }
 
     base_rets, base_stats = residual_momentum_returns(prices, **base_params)
+    # Freeze a pre-confluence equity fingerprint so confidence annotations never drift curves.
+    base_curve_fingerprint = [
+        round(float(v), 8) for v in equity_from_returns(base_rets).iloc[::21].tolist()[:40]
+    ]
     base_metrics = summarize(base_rets, "Base Resid Mom Tech 80%")
     base_score = survival_score(base_metrics, hard_max_dd=HARD_MAX_DD)
+    trade_log = list(base_stats.get("trade_log") or [])
+    conf_summary = dict(base_stats.get("confidence") or {})
     print(
         f"BASE: score={base_score:.3f} Sharpe={base_metrics['sharpe']:.2f} "
         f"CAGR={base_metrics['cagr']:.2%} MaxDD={base_metrics['max_dd']:.2%}"
     )
+    if conf_summary:
+        print(
+            f"TRADE CONFIDENCE (background): mean={conf_summary.get('mean')} "
+            f"median={conf_summary.get('median')} buckets={conf_summary.get('buckets')}"
+        )
 
     rows: list[dict] = []
     curves: dict[str, list[dict]] = {}
@@ -223,6 +234,25 @@ def run() -> dict:
         )
     )
 
+    # Guardrail: confidence metadata must not mutate strategy returns.
+    post_fingerprint = [
+        round(float(v), 8) for v in equity_from_returns(base_rets).iloc[::21].tolist()[:40]
+    ]
+    if post_fingerprint != base_curve_fingerprint:
+        raise RuntimeError("Confidence annotation unexpectedly changed base equity curve")
+
+    recent_trades = trade_log[-60:]
+    (ROOT / "outputs" / "trade_confidence.json").write_text(
+        json.dumps(
+            {
+                "summary": conf_summary,
+                "n_trades": len(trade_log),
+                "trades": trade_log,
+            },
+            indent=2,
+        )
+    )
+
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "data_source": "yahoo finance chart API (daily OHLC, cached)",
@@ -246,6 +276,10 @@ def run() -> dict:
                 "confluences_tested": len(CONFLUENCES),
                 "candidates_including_base": len(rows),
                 "survivors": len(survivors),
+                "trade_confidence_note": (
+                    "Per-trade confidence is background metadata only; "
+                    "it does not change which trades are taken or equity curves."
+                ),
             },
             "strategy_b": {
                 "note": "Daily LSC proxy until 5m/1H stack is wired",
@@ -271,11 +305,17 @@ def run() -> dict:
             "tested": len(rows),
             "top": top_payload,
         },
+        "trade_confidence": {
+            "summary": conf_summary,
+            "n_trades": len(trade_log),
+            "recent_trades": recent_trades,
+        },
         "lsc_event_count": int(len(events)),
         "warnings": [
             f"Base book = residual momentum @ {int(BASE_TECH_WEIGHT*100)}% tech (long-only).",
             f"Tested {len(CONFLUENCES)} confluence overlays + base; survivors keep |MaxDD| ≤ {int(HARD_MAX_DD*100)}%.",
             "Only the top surviving confluence strategies are charted (account-survival ranking).",
+            "Trade confidence scores are diagnostic metadata only — they do not alter trades or charts.",
             "Strategy B is a daily sweep/reclaim proxy — not the full 5m ICT confluence engine yet.",
             "Interim decision only — not live capital advice. Past DD ≠ future DD.",
             f"Selected Strat A: {best['label']} (score={best['score']:.3f}, MaxDD={best['metrics']['max_dd']:.1%}).",
