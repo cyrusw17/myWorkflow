@@ -33,22 +33,29 @@
     main {
       max-width: 1100px;
       margin: 0 auto;
-      padding: 2rem 1.25rem 4rem;
+      padding: 1.25rem 0.9rem 3.5rem;
+    }
+    @media (min-width: 720px) {
+      main { padding: 2rem 1.25rem 4rem; }
     }
     h1 {
-      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      font-size: clamp(1.45rem, 5.5vw, 2.4rem);
       letter-spacing: -0.03em;
       margin: 0 0 0.35rem;
       font-weight: 700;
     }
-    .sub { color: var(--muted); margin: 0 0 1.5rem; max-width: 42rem; line-height: 1.45; }
-    .row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.25rem; }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; max-width: 42rem; line-height: 1.45; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
     .badge {
       border: 1px solid var(--line);
       background: var(--bg1);
-      padding: 0.4rem 0.7rem;
-      font-size: 0.85rem;
+      padding: 0.35rem 0.6rem;
+      font-size: 0.78rem;
       color: var(--muted);
+      max-width: 100%;
+    }
+    @media (min-width: 720px) {
+      .badge { font-size: 0.85rem; padding: 0.4rem 0.7rem; }
     }
     .badge strong { color: var(--ink); font-weight: 600; }
     .badge.ok { border-color: #2d6b4f; color: var(--ok); }
@@ -56,18 +63,127 @@
     .panel {
       border: 1px solid var(--line);
       background: rgba(20, 32, 28, 0.85);
-      padding: 1rem 1rem 0.5rem;
-      margin-bottom: 1.25rem;
+      padding: 0.85rem 0.75rem 0.7rem;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    @media (min-width: 720px) {
+      .panel { padding: 1rem 1rem 0.75rem; margin-bottom: 1.25rem; }
     }
     .panel h2 {
       margin: 0 0 0.75rem;
-      font-size: 1rem;
+      font-size: 0.92rem;
       font-weight: 600;
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.08em;
     }
-    canvas { width: 100% !important; max-height: 420px; }
+    .panel h3 {
+      margin: 0 0 0.35rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .panel .hint {
+      margin: 0 0 0.75rem;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+    .legend-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem 0.85rem;
+      margin: 0 0 0.85rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .legend-row i {
+      display: inline-block;
+      width: 0.85rem;
+      height: 0.2rem;
+      margin-right: 0.35rem;
+      vertical-align: middle;
+      border-radius: 1px;
+    }
+    .windows {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.85rem;
+    }
+    @media (min-width: 960px) {
+      .windows { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+    }
+    .window {
+      border: 1px solid var(--line);
+      background: rgba(12, 18, 16, 0.55);
+      padding: 0.75rem 0.65rem 0.55rem;
+      min-width: 0;
+    }
+    @media (min-width: 720px) {
+      .window { padding: 0.85rem 0.85rem 0.65rem; }
+    }
+    .window-head {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.2rem;
+      margin-bottom: 0.45rem;
+    }
+    @media (min-width: 960px) {
+      .window-head {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.5rem;
+      }
+    }
+    .window-head h3 { margin: 0; }
+    .window-range {
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+    .returns {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.3rem 0.65rem;
+      margin: 0.65rem 0 0.1rem;
+      font-size: 0.72rem;
+    }
+    .returns span {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .returns strong { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .returns .up { color: var(--ok); }
+    .returns .down { color: var(--bad); }
+    .chart-box {
+      position: relative;
+      width: 100%;
+      height: 270px;
+    }
+    .chart-box.full {
+      height: 360px;
+    }
+    @media (min-width: 720px) {
+      .chart-box { height: 280px; }
+      .chart-box.full { height: 400px; }
+    }
+    @media (min-width: 960px) {
+      .chart-box { height: 260px; }
+      .chart-box.full { height: 440px; }
+    }
+    .chart-box canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+      max-width: 100%;
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -94,12 +210,21 @@
     <div class="row" id="badges"></div>
 
     <section class="panel">
-      <h2>Equity curves (growth of $1)</h2>
-      <canvas id="equityChart" height="140"></canvas>
+      <h2>Horizon windows</h2>
+      <p class="hint">Each chart is rebased to $1 at the start of the window so 3M / 6M / 1Y are visually comparable for every book.</p>
+      <div class="legend-row" id="sharedLegend"></div>
+      <div class="windows" id="windows"></div>
     </section>
 
     <section class="panel">
-      <h2>Metrics</h2>
+      <h2>Full sample equity (growth of $1)</h2>
+      <div class="chart-box full">
+        <canvas id="equityChart"></canvas>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Metrics (full sample)</h2>
       <div style="overflow-x:auto">
         <table id="metricsTable">
           <thead>
@@ -133,6 +258,17 @@
   <script>
     const pct = (x) => (x * 100).toFixed(2) + "%";
     const num = (x) => (x == null ? "—" : Number(x).toFixed(2));
+    const BOOKS = [
+      { key: "spy_bh", label: "SPY B&H", color: "#7aa2ff", width: 2, dash: [] },
+      { key: "spy_vol_match", label: "SPY vol-match", color: "#c4b5fd", width: 1.5, dash: [4, 4] },
+      { key: "strat_a", label: "Strat A Residual Mom", color: "#3dd6c6", width: 2, dash: [] },
+      { key: "strat_b", label: "Strat B LSC proxy", color: "#f0a34a", width: 2, dash: [] },
+    ];
+    const WINDOWS = [
+      { id: "3m", label: "3 months", days: 91 },
+      { id: "6m", label: "6 months", days: 182 },
+      { id: "1y", label: "1 year", days: 365 },
+    ];
 
     async function load() {
       const res = await fetch("./data/bakeoff.json", { cache: "no-store" });
@@ -144,11 +280,18 @@
       const el = document.getElementById("badges");
       const staleHours = (Date.now() - Date.parse(data.generated_at)) / 36e5;
       const stale = staleHours > 24 * 14;
+      const a = (data.assumptions && data.assumptions.strategy_a) || {};
+      const techShare = a.realized_tech_trade_share;
+      const tradesMo = a.realized_trades_per_month;
+      const techOk = techShare != null && techShare >= 0.30;
+      const tradeOk = tradesMo != null && tradesMo >= 15 && tradesMo <= 28;
       el.innerHTML = `
         <div class="badge ${stale ? "warn" : "ok"}"><strong>${stale ? "Data may be stale" : "Results loaded"}</strong> · ${new Date(data.generated_at).toUTCString()}</div>
         <div class="badge"><strong>Decision</strong> · ${data.decision_status}</div>
         <div class="badge"><strong>Source</strong> · ${data.data_source}</div>
         <div class="badge"><strong>LSC events</strong> · ${data.lsc_event_count}</div>
+        <div class="badge ${techOk ? "ok" : "warn"}"><strong>A tech trades</strong> · ${techShare == null ? "—" : (techShare * 100).toFixed(0) + "%"} (≥30%)</div>
+        <div class="badge ${tradeOk ? "ok" : "warn"}"><strong>A trades/mo</strong> · ${tradesMo == null ? "—" : Number(tradesMo).toFixed(1)} (~20)</div>
       `;
     }
 
@@ -168,50 +311,169 @@
       `).join("");
     }
 
-    function series(points) {
+    function parseDate(s) {
+      return new Date(s + "T00:00:00Z");
+    }
+
+    function sliceWindow(points, days) {
+      if (!points || !points.length) return [];
+      const end = parseDate(points[points.length - 1].date);
+      const startMs = end.getTime() - days * 86400000;
+      const sliced = points.filter((p) => parseDate(p.date).getTime() >= startMs);
+      if (!sliced.length) return [];
+      const base = sliced[0].equity || 1;
+      return sliced.map((p) => ({
+        date: p.date,
+        equity: p.equity / base,
+      }));
+    }
+
+    function windowReturn(points) {
+      if (!points || points.length < 2) return null;
+      return points[points.length - 1].equity / points[0].equity - 1;
+    }
+
+    const charts = [];
+    const isMobile = () => window.matchMedia("(max-width: 719px)").matches;
+
+    function chartOptions({ legend = true, maxTicks = 5 } = {}) {
+      const mobile = isMobile();
       return {
-        labels: points.map(p => p.date),
-        values: points.map(p => p.equity),
+        responsive: true,
+        maintainAspectRatio: false,
+        resizeDelay: 50,
+        interaction: { mode: "index", intersect: false },
+        layout: {
+          padding: mobile
+            ? { top: 2, right: 2, bottom: 2, left: 0 }
+            : { top: 4, right: 6, bottom: 0, left: 0 },
+        },
+        plugins: {
+          legend: {
+            display: legend,
+            position: mobile ? "bottom" : "top",
+            labels: {
+              color: "#c5d4cc",
+              boxWidth: mobile ? 10 : 12,
+              boxHeight: 2,
+              padding: mobile ? 8 : 12,
+              font: { size: mobile ? 10 : 11 },
+            },
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(3)}`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: "#8aa397",
+              maxTicksLimit: mobile ? Math.min(maxTicks, 3) : maxTicks,
+              maxRotation: 0,
+              autoSkip: true,
+              font: { size: mobile ? 9 : 11 },
+            },
+            grid: { color: "rgba(36,53,47,0.6)" },
+          },
+          y: {
+            ticks: {
+              color: "#8aa397",
+              font: { size: mobile ? 9 : 11 },
+              callback: (v) => Number(v).toFixed(2),
+            },
+            grid: { color: "rgba(36,53,47,0.6)" },
+          },
+        },
       };
     }
 
-    function renderChart(data) {
-      const spy = series(data.curves.spy_bh);
-      const vm = series(data.curves.spy_vol_match);
-      const a = series(data.curves.strat_a);
-      const b = series(data.curves.strat_b);
-      const labels = spy.labels;
+    function datasetsFromCurves(curves) {
+      return BOOKS.map((book) => {
+        const pts = curves[book.key] || [];
+        return {
+          label: book.label,
+          data: pts.map((p) => p.equity),
+          borderColor: book.color,
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: book.width,
+          borderDash: book.dash,
+        };
+      });
+    }
 
-      new Chart(document.getElementById("equityChart"), {
+    function retClass(x) {
+      if (x == null) return "";
+      return x >= 0 ? "up" : "down";
+    }
+
+    function formatRet(x) {
+      if (x == null) return "—";
+      const sign = x > 0 ? "+" : "";
+      return sign + pct(x);
+    }
+
+    function renderSharedLegend() {
+      const el = document.getElementById("sharedLegend");
+      el.innerHTML = BOOKS.map((book) =>
+        `<span><i style="background:${book.color};${book.dash.length ? "opacity:0.75;box-shadow: inset 0 0 0 1px " + book.color : ""}"></i>${book.label}</span>`
+      ).join("");
+    }
+
+    function renderWindows(data) {
+      const root = document.getElementById("windows");
+      root.innerHTML = WINDOWS.map((w) => `
+        <div class="window">
+          <div class="window-head">
+            <h3>${w.label}</h3>
+            <span class="window-range" id="range-${w.id}"></span>
+          </div>
+          <div class="chart-box">
+            <canvas id="chart-${w.id}"></canvas>
+          </div>
+          <div class="returns" id="rets-${w.id}"></div>
+        </div>
+      `).join("");
+
+      WINDOWS.forEach((w) => {
+        const sliced = {};
+        BOOKS.forEach((book) => {
+          sliced[book.key] = sliceWindow(data.curves[book.key], w.days);
+        });
+        const labels = (sliced.spy_bh.length ? sliced.spy_bh : sliced.strat_a).map((p) => p.date);
+        const rangeEl = document.getElementById(`range-${w.id}`);
+        if (labels.length) {
+          rangeEl.textContent = `${labels[0]} → ${labels[labels.length - 1]}`;
+        }
+
+        charts.push(new Chart(document.getElementById(`chart-${w.id}`), {
+          type: "line",
+          data: {
+            labels,
+            datasets: datasetsFromCurves(sliced),
+          },
+          options: chartOptions({ legend: false, maxTicks: 4 }),
+        }));
+
+        document.getElementById(`rets-${w.id}`).innerHTML = BOOKS.map((book) => {
+          const r = windowReturn(sliced[book.key]);
+          return `<span>${book.label.replace("Strat ", "")}</span><strong class="${retClass(r)}">${formatRet(r)}</strong>`;
+        }).join("");
+      });
+    }
+
+    function renderFullChart(data) {
+      const labels = (data.curves.spy_bh || []).map((p) => p.date);
+      charts.push(new Chart(document.getElementById("equityChart"), {
         type: "line",
         data: {
           labels,
-          datasets: [
-            { label: "SPY B&H", data: spy.values, borderColor: "#7aa2ff", tension: 0.05, pointRadius: 0, borderWidth: 2 },
-            { label: "SPY vol-match", data: vm.values, borderColor: "#c4b5fd", tension: 0.05, pointRadius: 0, borderWidth: 1.5, borderDash: [4, 4] },
-            { label: "Strat A Residual Mom", data: a.values, borderColor: "#3dd6c6", tension: 0.05, pointRadius: 0, borderWidth: 2 },
-            { label: "Strat B LSC proxy", data: b.values, borderColor: "#f0a34a", tension: 0.05, pointRadius: 0, borderWidth: 2 },
-          ],
+          datasets: datasetsFromCurves(data.curves),
         },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          interaction: { mode: "index", intersect: false },
-          plugins: {
-            legend: { labels: { color: "#c5d4cc" } },
-          },
-          scales: {
-            x: {
-              ticks: { color: "#8aa397", maxTicksLimit: 8 },
-              grid: { color: "rgba(36,53,47,0.6)" },
-            },
-            y: {
-              ticks: { color: "#8aa397" },
-              grid: { color: "rgba(36,53,47,0.6)" },
-            },
-          },
-        },
-      });
+        options: chartOptions({ legend: true, maxTicks: isMobile() ? 4 : 8 }),
+      }));
     }
 
     function renderWarnings(data) {
@@ -220,7 +482,8 @@
       const items = [
         `Cost model: ${a.cost_bps_per_turnover_or_entry} bps per turnover/entry.`,
         `Universe: ${data.universe.join(", ")}.`,
-        `A params: beta L=${a.strategy_a.lookback_beta}, W=${a.strategy_a.formation}, skip=${a.strategy_a.skip}.`,
+        `A params: beta L=${a.strategy_a.lookback_beta}, W=${a.strategy_a.formation}, skip=${a.strategy_a.skip}, hold=${a.strategy_a.n_hold}, 1 entry/day, tech floor ${(a.strategy_a.target_tech_trade_share * 100).toFixed(0)}%.`,
+        `A ops: ${a.strategy_a.realized_trades_per_month} trades/mo · ${(a.strategy_a.realized_tech_trade_share * 100).toFixed(1)}% tech trades.`,
         `B params: pool=${a.strategy_b.lookback_pool}d, hold=${a.strategy_b.hold_days}d — ${a.strategy_b.note}`,
         ...(data.warnings || []),
       ];
@@ -230,14 +493,20 @@
     load()
       .then((data) => {
         renderBadges(data);
+        renderSharedLegend();
+        renderWindows(data);
+        renderFullChart(data);
         renderTable(data.metrics);
-        renderChart(data);
         renderWarnings(data);
       })
       .catch((err) => {
         document.getElementById("badges").innerHTML =
           `<div class="badge warn"><strong>Failed to load</strong> · ${err.message}</div>`;
       });
+
+    window.addEventListener("resize", () => {
+      charts.forEach((c) => c.resize());
+    });
   </script>
 </body>
 </html>
