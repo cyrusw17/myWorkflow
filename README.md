@@ -1,31 +1,56 @@
-# Groundwork Web — Business Workspace
+# AI Agent — Agentic Trading Research & Execution
 
-Cyrus's business operating system for **Groundwork Web** (groundwork-web.com).
+**Owner intent:** Build an AI agent that can eventually trade via Robinhood (agentic trading), starting with **strategy selection** — not live capital.
 
-## Start here
+## Phase 0 (current): Strategy bake-off vs SPY
 
-| Path | Purpose |
-|------|---------|
-| [`knowledge-base/README.md`](knowledge-base/README.md) | AI knowledge base index + quick facts |
-| [`knowledge-base/master-prompt.md`](knowledge-base/master-prompt.md) | Master prompt for any AI assistant |
-| [`priorities.md`](priorities.md) | Phased roadmap |
-| [`first-steps.md`](first-steps.md) | Launch playbook |
-| [`mvp-website/`](mvp-website/) | Live founding client landing page |
+Before any brokerage wiring, the agent must scientifically compare:
 
-## Repos
+| # | Strategy | Style | Horizon |
+|---|----------|-------|---------|
+| **1** | Residual Momentum | Classic quant / factor | Multi-day to weeks |
+| **2** | Liquidity Sweep Continuation (LSC) | SMC / ICT day-trade | Intraday (1H/4H → 5m) |
 
-| Repo | Purpose |
-|------|---------|
-| **myWorkflow** (this repo) | Full business workspace — docs, KB, MVP site, Laravel app |
-| [offer1](https://github.com/cyrusw17/offer1) | cPanel deploy source for production MVP site only |
+Both strategies are benchmarked against **SPY** (buy-and-hold and risk-adjusted SPY proxies). Winner → Phase 1 paper trading → Phase 2 Robinhood execution with hard risk caps.
 
-## Deploy live site
+## Use the master prompt
 
-Production deploys from **offer1**, not this repo. After MVP changes:
+Open a new Cursor / Claude / Codex chat and paste:
 
-```bash
-cd mvp-website
-git push origin main   # if using offer1 remote on mvp-website
+→ [`prompts/MASTER_PROMPT_quant_agent.md`](prompts/MASTER_PROMPT_quant_agent.md)
+
+That single prompt is the operating system for the agent: research protocol, strategy specs, metrics, kill criteria, and Robinhood-ready architecture later.
+
+## Repo layout
+
+```
+.
+├── README.md
+├── prompts/
+│   └── MASTER_PROMPT_quant_agent.md   ← paste this into a new AI session
+├── strategies/
+│   ├── 01-residual-momentum.md
+│   └── 02-liquidity-sweep-continuation.md
+└── docs/
+    └── research-protocol.md
 ```
 
-Or sync mvp-website changes to offer1 separately. See `mvp-website/docs/deploy-groundwork-web.com.md`.
+## GitHub
+
+**https://github.com/cyrusw17/myWorkflow** (rename to `ai-agent` on GitHub when ready)
+
+## Non-negotiables
+
+1. **No live trading** until backtests + paper trade clear kill criteria.
+2. **SPY is the null hypothesis** — if a strategy does not beat SPY on risk-adjusted terms, it dies.
+3. **Operational definitions > vibes** — BOS, IFVG, SMT, liquidity sweeps must be coded as measurable rules.
+4. **Risk first** — max daily loss, position size, and kill-switch before any order path exists.
+
+## Status
+
+- [x] Master quant prompt
+- [x] Strategy 1 + Strategy 2 written specs
+- [x] Research protocol (metrics, walk-forward, kill rules)
+- [ ] Backtest scaffolding (code)
+- [ ] Paper trade loop
+- [ ] Robinhood execution adapter (last)

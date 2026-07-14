@@ -1,4 +1,0 @@
-.env
-storage/*.sqlite
-storage/*.log
-.DS_Store
