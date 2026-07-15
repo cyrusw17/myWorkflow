@@ -173,6 +173,7 @@
         <div class="badge"><strong>Best score</strong> · ${winner?.name || "—"} (${num(winner?.score, 3)})</div>
         <div class="badge warn"><strong>Daily</strong> · ${usd(-(rules.daily_loss_dollars || 1250))}</div>
         <div class="badge" style="border-color:#6b2d35;color:var(--bad)"><strong>Max</strong> · floor ${usd(rules.max_loss_floor_dollars || 20000)}</div>
+        <div class="badge ok"><strong>Baseline profit locked</strong> · ${usd(baseline?.risk?.locked_profit_dollars || 0)}</div>
       `;
 
       // Grouped panels
@@ -208,6 +209,7 @@
             <td class="num ${r.cleared_daily ? "up" : "down"}">${usd(r.worst_day_dollars ?? r.worst_day * 25000)}</td>
             <td class="num ${(r.daily_kill_count || 0) > 0 ? "down" : "up"}"><strong>${r.daily_kill_count ?? 0}</strong></td>
             <td class="num ${r.cleared_max ? "up" : "down"}">${usd(r.min_equity_dollars ?? r.min_equity * 25000)}</td>
+            <td class="num up">${usd(r.locked_profit_dollars || 0)}</td>
             <td class="num">${pct(s.windows?.["6M"]?.metrics?.total_return)}</td>
           </tr>`;
         }).join("");
@@ -223,7 +225,7 @@
                   <th>#</th><th>Strategy</th><th>Global</th><th>Score</th>
                   <th>Pass</th><th>Fail</th><th>D/M</th>
                   <th>Sharpe</th><th>CAGR</th><th>MaxDD</th>
-                  <th>Worst day $</th><th>$1,250 kills</th><th>Min eq $</th><th>6M ret</th>
+                  <th>Worst day $</th><th>Kills</th><th>Min eq $</th><th>Profit locked</th><th>6M ret</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
@@ -369,9 +371,11 @@
           data: {
             labels: series.map((p) => p.date),
             datasets: [
-              { label: `${baseline?.name || "Baseline"} · ${key}`, data: series.map((p) => p.equity), borderColor: "#3dd6c6", pointRadius: 0, borderWidth: 2, tension: 0.05, order: 2 },
-              { label: "$20k floor", data: series.map(() => rules.max_loss_floor ?? 0.9), borderColor: "#f07178", borderDash: [6, 4], pointRadius: 0, borderWidth: 1.8, tension: 0, order: 3 },
-              killMarkerDataset(series, `5% daily-loss KILL (${kills.length})`),
+              { label: `${baseline?.name || "Baseline"} equity ($)`, data: series.map((p) => p.equity_dollars ?? p.equity), borderColor: "#3dd6c6", pointRadius: 0, borderWidth: 2, tension: 0.05, order: 2 },
+              { label: `Withdrawn profit (${usd(series.at(-1)?.profit_tally_dollars || 0)})`, data: series.map((p) => p.profit_tally_dollars ?? null), borderColor: "#f0a34a", pointRadius: 0, borderWidth: 2.2, tension: 0.05, order: 1 },
+              { label: "Equity + locked", data: series.map((p) => p.total_dollars ?? null), borderColor: "#e8f0ec", borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, tension: 0.05, order: 1 },
+              { label: "$20k floor", data: series.map(() => rules.max_loss_floor_dollars ?? 20000), borderColor: "#f07178", borderDash: [6, 4], pointRadius: 0, borderWidth: 1.8, tension: 0, order: 3 },
+              killMarkerDataset(series.map((p) => ({ ...p, equity: p.equity_dollars ?? p.equity })), `$1,250 / $5k KILL (${kills.length})`),
             ],
           },
           options: {
@@ -379,9 +383,12 @@
             plugins: {
               title: {
                 display: true,
-                text: kills.length
-                  ? `${kills.length} day(s) would have killed the account on the −$1,250 daily-loss rule`
-                  : "No $1,250 daily-loss kill days in this window",
+                text: (() => {
+                  const tally = series.at(-1)?.profit_tally_dollars || 0;
+                  return kills.length
+                    ? `Profit locked ${usd(tally)} · ${kills.length} kill day(s)`
+                    : `Profit locked ${usd(tally)} · no kill days in window`;
+                })(),
                 color: kills.length ? "#f07178" : "#8aa397",
                 font: { size: 12 },
               },

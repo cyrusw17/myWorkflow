@@ -35,7 +35,7 @@ ATTEMPT_STEP = 5
 
 def find_daily_kills(rets: pd.Series) -> list[dict]:
     """Days that breach $1,250 daily or $5k max on the daily-withdraw path."""
-    _eq, kills, _locked = walk_daily_withdraw(rets.fillna(0.0), RULES)
+    _eq, kills, _locked, _locked_s = walk_daily_withdraw(rets.fillna(0.0), RULES)
     return kills
 
 
@@ -46,7 +46,7 @@ def _curve(
     kill_days: list[dict] | None = None,
 ) -> list[dict]:
     """Equity under daily profit-withdraw; retains kill days when downsampling."""
-    eq, kills, _ = walk_daily_withdraw(rets.fillna(0.0), RULES)
+    eq, kills, _locked, locked_s = walk_daily_withdraw(rets.fillna(0.0), RULES)
     kill_dates = {k["date"] for k in (kill_days if kill_days is not None else kills)}
     if step > 1 and len(eq) > step * 2:
         keep = set(range(0, len(eq), step))
@@ -56,13 +56,18 @@ def _curve(
                 keep.add(i)
         idxs = sorted(keep)
         eq = eq.iloc[idxs]
+        locked_s = locked_s.reindex(eq.index)
     rows = []
     for dt, val in eq.items():
         d = pd.Timestamp(dt).strftime("%Y-%m-%d")
+        loc = float(locked_s.loc[dt])
         rows.append({
             "date": d,
             "equity": round(float(val), 6),
             "equity_dollars": round(dollars(val, RULES), 2),
+            "profit_tally": round(loc, 6),
+            "profit_tally_dollars": round(dollars(loc, RULES), 2),
+            "total_dollars": round(dollars(val, RULES) + dollars(loc, RULES), 2),
             "daily_kill": d in kill_dates,
         })
     return rows
@@ -132,7 +137,7 @@ def run() -> dict:
         daily = rets.fillna(0.0)
         kills = find_daily_kills(daily)
         worst_day = float(daily.min()) if len(daily) else 0.0
-        eq, _k_all, locked = walk_daily_withdraw(daily, RULES)
+        eq, _k_all, locked, _locked_s = walk_daily_withdraw(daily, RULES)
         min_eq = float(eq.min()) if len(eq) else 1.0
         row = {
             "id": spec.id,

@@ -56,7 +56,7 @@ def _curve(rets: pd.Series, step: int = 1, *, daily_loss: float | None = None) -
     """Equity under daily profit-withdraw; marks kill days ($1,250 daily or $5k max)."""
     del daily_loss  # limits come from RULES
     r = rets.fillna(0.0)
-    eq, kills, _ = walk_daily_withdraw(r, RULES)
+    eq, kills, _locked, locked_s = walk_daily_withdraw(r, RULES)
     kill_set = {k["date"] for k in kills}
     if step > 1 and len(eq) > step * 2:
         keep = set(range(0, len(eq), step))
@@ -64,12 +64,19 @@ def _curve(rets: pd.Series, step: int = 1, *, daily_loss: float | None = None) -
         for i, dt in enumerate(eq.index):
             if pd.Timestamp(dt).strftime("%Y-%m-%d") in kill_set:
                 keep.add(i)
-        eq = eq.iloc[sorted(keep)]
+        idxs = sorted(keep)
+        eq = eq.iloc[idxs]
+        locked_s = locked_s.reindex(eq.index)
     return [
         {
             "date": dt.strftime("%Y-%m-%d"),
             "equity": round(float(val), 6),
             "equity_dollars": round(dollars(val, RULES), 2),
+            "profit_tally": round(float(locked_s.loc[dt]), 6),
+            "profit_tally_dollars": round(dollars(float(locked_s.loc[dt]), RULES), 2),
+            "total_dollars": round(
+                dollars(float(val), RULES) + dollars(float(locked_s.loc[dt]), RULES), 2
+            ),
             "daily_kill": dt.strftime("%Y-%m-%d") in kill_set,
         }
         for dt, val in eq.items()
@@ -255,7 +262,7 @@ def evaluate_window(rets: pd.Series, label: str) -> dict:
         "phase2": _phase_result_dict(shot.phase2),
     }
 
-    eq, kills, _ = walk_daily_withdraw(rets.fillna(0.0), rules)
+    eq, kills, _locked, _locked_s = walk_daily_withdraw(rets.fillna(0.0), rules)
     daily_hits = sum(1 for k in kills if k.get("daily_kill"))
     max_hit = any(k.get("max_kill") for k in kills)
     min_eq = float(eq.min()) if len(eq) else 1.0
@@ -279,7 +286,7 @@ def evaluate_window(rets: pd.Series, label: str) -> dict:
 def build_risk_visuals(rets: pd.Series, strategies: list[dict], rules: FtmoRules) -> dict:
     """Dollar-limit envelope: $1,250 daily / $5k max, daily profit withdraw."""
     r = rets.fillna(0.0)
-    eq, kills_all, locked = walk_daily_withdraw(r, rules)
+    eq, kills_all, locked, locked_s = walk_daily_withdraw(r, rules)
     daily = r.astype(float)
     worst_day = float(daily.min()) if len(daily) else 0.0
     best_day = float(daily.max()) if len(daily) else 0.0
@@ -292,7 +299,7 @@ def build_risk_visuals(rets: pd.Series, strategies: list[dict], rules: FtmoRules
 
     def path_pack(series: pd.Series, step: int = 1) -> dict:
         s = series.fillna(0.0)
-        e, kills, _ = walk_daily_withdraw(s, rules)
+        e, kills, _locked, locked_path = walk_daily_withdraw(s, rules)
         kill_set = {k["date"] for k in kills}
         if step > 1 and len(e) > step * 2:
             keep = set(range(0, len(e), step))
@@ -302,12 +309,19 @@ def build_risk_visuals(rets: pd.Series, strategies: list[dict], rules: FtmoRules
                     keep.add(i)
             idxs = sorted(keep)
             e = e.iloc[idxs]
+            locked_path = locked_path.reindex(e.index)
             s = s.reindex(e.index).fillna(0.0)
         dates = [dt.strftime("%Y-%m-%d") for dt in e.index]
+        profit = [round(float(v), 6) for v in locked_path.values]
+        profit_d = [round(dollars(v, rules), 2) for v in locked_path.values]
+        eq_d = [round(dollars(v, rules), 2) for v in e.values]
         return {
             "dates": dates,
             "equity": [round(float(v), 6) for v in e.values],
-            "equity_dollars": [round(dollars(v, rules), 2) for v in e.values],
+            "equity_dollars": eq_d,
+            "profit_tally": profit,
+            "profit_tally_dollars": profit_d,
+            "total_dollars": [round(a + b, 2) for a, b in zip(eq_d, profit_d)],
             "daily": [round(float(v), 6) for v in s.values],
             "daily_dollars": [round(float(v) * rules.initial_balance, 2) for v in s.values],
             "daily_kill": [d in kill_set for d in dates],
@@ -316,11 +330,13 @@ def build_risk_visuals(rets: pd.Series, strategies: list[dict], rules: FtmoRules
                     "date": d,
                     "equity": round(float(e.loc[pd.Timestamp(d)]), 6),
                     "equity_dollars": round(dollars(float(e.loc[pd.Timestamp(d)]), rules), 2),
+                    "profit_tally_dollars": round(dollars(float(locked_path.loc[pd.Timestamp(d)]), rules), 2),
                 }
                 for d in dates
                 if d in kill_set
             ],
             "daily_kill_count": int(sum(1 for d in dates if d in kill_set)),
+            "final_profit_tally_dollars": profit_d[-1] if profit_d else 0.0,
             "max_loss_floor": [round(max_floor, 6)] * len(e),
             "max_loss_floor_dollars": [round(rules.max_loss_floor_dollars, 2)] * len(e),
             "daily_loss_limit": [-rules.daily_loss] * len(e),
