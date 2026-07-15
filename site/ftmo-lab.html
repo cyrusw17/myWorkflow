@@ -154,7 +154,9 @@
         Red line = <strong>$20,000 floor</strong> ($5k max loss from $25k start).
         Orange dashed = <strong>−$1,250</strong> daily-loss reference.
         Ops: withdraw all day profit every green day — equity only falls on losses.
-        <strong style="color:var(--bad)">Red ×</strong> = day PnL through −$1,250 (account kill).
+        <strong style="color:var(--b)">Gold line</strong> = cumulative withdrawn profit (the tally that matters).
+        <strong style="color:var(--ink)">White/teal dashed</strong> = equity + locked profit.
+        <strong style="color:var(--bad)">Red ×</strong> = account kill (−$1,250 daily or −$5k max).
       </p>
       <div class="meters" id="headroomMeters"></div>
       <div class="tabs" id="riskTabs" style="margin-top:0.9rem"></div>
@@ -323,6 +325,7 @@
         <div class="badge ok"><strong>Winner</strong> · ${top?.name || "—"}</div>
         <div class="badge warn"><strong>Daily limit</strong> · ${usd(-(lim.daily_loss_dollars||1250))}</div>
         <div class="badge" style="border-color:#6b2d35;color:var(--bad)"><strong>Max loss</strong> · ${usd(-(lim.max_loss_dollars||5000))} · floor ${usd(lim.max_loss_floor_dollars||20000)}</div>
+        <div class="badge ok"><strong>Profit locked</strong> · ${usd(env.locked_profit_dollars || 0)}</div>
         <div class="badge"><strong>2Y full-pass</strong> · ${pct(top?.full_2y?.challenge?.full_pass_rate)}</div>
         <div class="badge ok"><strong>2Y fail</strong> · ${pct(top?.full_2y?.challenge?.fail_rate)} (daily ${top?.full_2y?.challenge?.fail_daily || 0} / max ${top?.full_2y?.challenge?.fail_max || 0})</div>
         <div class="badge"><strong>Sharpe</strong> · ${num(top?.full_2y?.metrics?.sharpe)}</div>
@@ -350,6 +353,27 @@
                 borderWidth: 2.2,
                 fill: false,
                 order: 2,
+              },
+              {
+                label: `Withdrawn profit tally (${usd((path.profit_tally_dollars || []).at(-1) || 0)})`,
+                data: path.profit_tally_dollars || path.profit_tally || [],
+                borderColor: "#f0a34a",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.2,
+                fill: false,
+                order: 1,
+              },
+              {
+                label: "Equity + locked profit",
+                data: path.total_dollars || [],
+                borderColor: "#e8f0ec",
+                borderDash: [4, 3],
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.6,
+                fill: false,
+                order: 1,
               },
               {
                 label: "$20k max-loss floor",
@@ -381,9 +405,13 @@
             plugins: {
               title: {
                 display: true,
-                text: (path.daily_kill_count || 0)
-                  ? `Equity vs $20k floor · ${key} · ${path.daily_kill_count} daily-loss kill day(s)`
-                  : `Equity vs $20k floor · ${key} · no $1,250 daily kills`,
+                text: (() => {
+                  const tally = (path.profit_tally_dollars || []).at(-1) || 0;
+                  const kill = path.daily_kill_count || 0;
+                  return kill
+                    ? `Equity + profit tally ${usd(tally)} · ${key} · ${kill} kill day(s)`
+                    : `Equity + profit tally ${usd(tally)} · ${key}`;
+                })(),
                 color: (path.daily_kill_count || 0) ? "#f07178" : "#8aa397",
                 font: { size: 12 },
               },
@@ -618,8 +646,8 @@
             labels: series.map((p) => p.date),
             datasets: [
               {
-                label: `${top?.name || "Winner"} · ${key}`,
-                data: series.map((p) => p.equity),
+                label: `${top?.name || "Winner"} equity ($)`,
+                data: series.map((p) => p.equity_dollars ?? p.equity),
                 borderColor: "#3dd6c6",
                 tension: 0.05,
                 pointRadius: 0,
@@ -627,8 +655,27 @@
                 order: 2,
               },
               {
+                label: `Withdrawn profit tally (${usd(series.at(-1)?.profit_tally_dollars || 0)})`,
+                data: series.map((p) => p.profit_tally_dollars ?? null),
+                borderColor: "#f0a34a",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.2,
+                order: 1,
+              },
+              {
+                label: "Equity + locked profit",
+                data: series.map((p) => p.total_dollars ?? null),
+                borderColor: "#e8f0ec",
+                borderDash: [4, 3],
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.5,
+                order: 1,
+              },
+              {
                 label: "$20k max-loss floor",
-                data: series.map(() => lim.max_loss_floor ?? 0.9),
+                data: series.map(() => lim.max_loss_floor_dollars ?? 20000),
                 borderColor: "#f07178",
                 borderDash: [6, 4],
                 tension: 0,
@@ -637,8 +684,8 @@
                 order: 3,
               },
               {
-                label: `$1,250 daily KILL (${killN})`,
-                data: series.map((p) => (p.daily_kill ? p.equity : null)),
+                label: `$1,250 / $5k KILL (${killN})`,
+                data: series.map((p) => (p.daily_kill ? (p.equity_dollars ?? p.equity) : null)),
                 borderColor: "#f07178",
                 backgroundColor: "#f07178",
                 showLine: false,
@@ -655,9 +702,12 @@
             plugins: {
               title: {
                 display: true,
-                text: killN
-                  ? `${killN} day(s) would have killed the account on the −$1,250 daily-loss rule`
-                  : "No $1,250 daily-loss kill days in this window",
+                text: (() => {
+                  const tally = series.at(-1)?.profit_tally_dollars || 0;
+                  return killN
+                    ? `Profit locked ${usd(tally)} · ${killN} kill day(s)`
+                    : `Profit locked ${usd(tally)} · no kill days in window`;
+                })(),
                 color: killN ? "#f07178" : "#8aa397",
                 font: { size: 12 },
               },

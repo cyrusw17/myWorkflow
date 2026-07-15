@@ -59,7 +59,7 @@ def walk_daily_withdraw(
     rules: FtmoRules | None = None,
     *,
     stop_on_breach: bool = True,
-) -> tuple[pd.Series, list[dict], float]:
+) -> tuple[pd.Series, list[dict], float, pd.Series]:
     """
     Equity path with "withdraw all day profit" ops.
 
@@ -69,13 +69,14 @@ def walk_daily_withdraw(
     - Max kill: post-trade equity < $20,000 (0.80 of initial).
 
     By default stops at the first breach (account is dead). Returns
-    (equity_series, kill_events, locked_profit_frac).
+    (equity_series, kill_events, locked_profit_frac, cumulative_locked_series).
     """
     rules = rules or FtmoRules()
     r = rets.fillna(0.0)
     eq = 1.0
     locked = 0.0
     eqs: list[float] = []
+    locked_path: list[float] = []
     kills: list[dict] = []
     floor = rules.max_loss_floor
     daily_abs = rules.daily_loss  # fraction of initial
@@ -84,6 +85,7 @@ def walk_daily_withdraw(
     for dt, ret in r.items():
         if dead:
             eqs.append(eq)
+            locked_path.append(locked)
             continue
         day_start = eq
         gross = day_start * (1.0 + float(ret))
@@ -100,18 +102,22 @@ def walk_daily_withdraw(
                 "day_pnl": round(float(day_pnl), 6),
                 "day_pnl_dollars": round(dollars(day_pnl, rules), 2),
                 "day_return": round(float(ret), 6),
+                "locked_profit": round(float(locked), 6),
+                "locked_profit_dollars": round(dollars(locked, rules), 2),
                 "reason": "daily" if daily_kill else "max",
                 "daily_kill": bool(daily_kill),
                 "max_kill": bool(max_kill),
             })
             eq = gross
             eqs.append(eq)
+            locked_path.append(locked)
             if stop_on_breach:
                 dead = True
             elif day_pnl > 0:
                 locked += day_pnl
                 eq = day_start
                 eqs[-1] = eq
+                locked_path[-1] = locked
             continue
         if day_pnl > 0:
             locked += day_pnl
@@ -119,9 +125,11 @@ def walk_daily_withdraw(
         else:
             eq = gross
         eqs.append(eq)
+        locked_path.append(locked)
 
     equity = pd.Series(eqs, index=r.index, dtype=float)
-    return equity, kills, float(locked)
+    locked_s = pd.Series(locked_path, index=r.index, dtype=float)
+    return equity, kills, float(locked), locked_s
 
 
 @dataclass
