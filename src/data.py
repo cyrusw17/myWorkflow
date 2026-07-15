@@ -82,7 +82,18 @@ def load_universe(
     refresh: bool = False,
     ffill_limit: int = 3,
 ) -> pd.DataFrame:
-    series = [fetch_daily(t, start=start, refresh=refresh) for t in tickers]
+    series = []
+    failed: list[str] = []
+    for t in tickers:
+        try:
+            series.append(fetch_daily(t, start=start, refresh=refresh))
+        except Exception as exc:  # noqa: BLE001 — skip thin / broken Yahoo symbols
+            failed.append(f"{t} ({exc})")
+    if not series:
+        raise RuntimeError(f"No tickers loaded. Failures: {failed[:5]}")
+    if failed:
+        print(f"  skipped {len(failed)} ticker(s): {', '.join(x.split(' (')[0] for x in failed[:8])}"
+              + ("…" if len(failed) > 8 else ""))
     prices = pd.concat(series, axis=1).sort_index()
     prices = prices.ffill(limit=ffill_limit).dropna(how="any")
     return prices
