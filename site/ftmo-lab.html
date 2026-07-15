@@ -245,9 +245,14 @@
     </section>
 
     <section class="panel">
-      <h2>Pass-then-defend → Active (trade more often)</h2>
-      <p class="hint" id="siblingHint">Higher-frequency sibling of the top book: shorter lookbacks, fast TSMOM sleeve, softer brake.</p>
-      <div class="chart-box"><canvas id="siblingChart"></canvas></div>
+      <h2>Trade-more siblings (6M)</h2>
+      <p class="hint">Base vs Active for the two core books — Equity ($) + locked profit tally. Active variants use shorter signals and softer brakes to sit flat less often.</p>
+      <h3 style="margin:0.75rem 0 0.35rem;font-size:0.95rem;color:var(--muted)">Pass-then-defend</h3>
+      <p class="hint" id="siblingHintPd" style="margin-top:0"></p>
+      <div class="chart-box"><canvas id="siblingChartPd"></canvas></div>
+      <h3 style="margin:1.1rem 0 0.35rem;font-size:0.95rem;color:var(--muted)">RP + Dual-mom blend</h3>
+      <p class="hint" id="siblingHintRp" style="margin-top:0"></p>
+      <div class="chart-box"><canvas id="siblingChartRp"></canvas></div>
     </section>
 
     <section class="panel">
@@ -554,7 +559,8 @@
         card("Least failures", `<p><strong style="color:var(--ink)">${ch.least_fails?.name || "—"}</strong></p><p>Fail rate ${pct(ch.least_fails?.fail_rate)} · ${ch.least_fails?.fails || 0} fails / ${ch.least_fails?.attempts || 0} scored attempts</p>`),
         card("Best paycheck (funded)", `<p><strong style="color:var(--ink)">${ch.best_paycheck?.name || "—"}</strong></p><p>Avg locked trader payout ${pct(ch.best_paycheck?.avg_locked_trader)} · funded breach ${pct(ch.best_paycheck?.fund_breach_rate)}</p><p>Unpaid lost if paying out ${pct(ch.best_paycheck?.avg_unpaid_lost)} vs hoarding ${pct(ch.best_paycheck?.hoard_unpaid_lost)}</p><p>${ch.best_paycheck?.note || ""}</p>`),
         card("Most room to improve", `<p><strong style="color:var(--ink)">${ch.most_room_to_improve?.name || "—"}</strong></p><p>Improvement ${num(ch.most_room_to_improve?.improvement_room, 3)}</p><p>${ch.most_room_to_improve?.note || ""}</p>`),
-        card("Trade-more sibling", `<p><strong style="color:var(--ink)">${ch.active_sibling?.active_name || "—"}</strong></p><p>Active days ${pct(ch.active_sibling?.active_active_day_rate)} vs base ${pct(ch.active_sibling?.base_active_day_rate)} · flat ${pct(ch.active_sibling?.active_flat_day_rate)} vs ${pct(ch.active_sibling?.base_flat_day_rate)}</p><p>Composite ${num(ch.active_sibling?.active_composite, 3)} vs base ${num(ch.active_sibling?.base_composite, 3)}</p><p>${ch.active_sibling?.note || ""}</p>`),
+        card("Pass-defend · Active", `<p><strong style="color:var(--ink)">${ch.active_sibling?.active_name || "—"}</strong></p><p>Active days ${pct(ch.active_sibling?.active_active_day_rate)} vs base ${pct(ch.active_sibling?.base_active_day_rate)} · flat ${pct(ch.active_sibling?.active_flat_day_rate)} vs ${pct(ch.active_sibling?.base_flat_day_rate)}</p><p>Composite ${num(ch.active_sibling?.active_composite, 3)} (#${ch.active_sibling?.active_rank ?? "—"}) vs base ${num(ch.active_sibling?.base_composite, 3)}</p>`),
+        card("RP Dual · Active", `<p><strong style="color:var(--ink)">${ch.rp_dual_sibling?.active_name || "—"}</strong></p><p>Active days ${pct(ch.rp_dual_sibling?.active_active_day_rate)} vs base ${pct(ch.rp_dual_sibling?.base_active_day_rate)} · flat ${pct(ch.rp_dual_sibling?.active_flat_day_rate)} vs ${pct(ch.rp_dual_sibling?.base_flat_day_rate)}</p><p>Composite ${num(ch.rp_dual_sibling?.active_composite, 3)} (#${ch.rp_dual_sibling?.active_rank ?? "—"}) vs base ${num(ch.rp_dual_sibling?.base_composite, 3)}</p>`),
       ].join("");
 
       document.querySelector("#stratTable tbody").innerHTML = strat.map((s) => {
@@ -816,25 +822,24 @@
         },
       }));
 
-      // Sibling: pass_defend vs pass_defend_active (trade more often)
-      const sib = ch.active_sibling || {};
-      const sibHint = document.getElementById("siblingHint");
-      if (sibHint && sib.note) {
-        sibHint.innerHTML = `${sib.note} Active days <strong style="color:var(--ok)">${pct(sib.active_active_day_rate)}</strong> vs base <strong>${pct(sib.base_active_day_rate)}</strong> · flat <strong style="color:var(--ok)">${pct(sib.active_flat_day_rate)}</strong> vs <strong>${pct(sib.base_flat_day_rate)}</strong>.`;
-      }
-      const sibCurves = data.sibling_focus_curves || {};
-      const baseSib = sibCurves.base_6m || curve6.pass_defend || [];
-      const actSib = sibCurves.active_6m || curve6.pass_defend_active || [];
-      const sibCanvas = document.getElementById("siblingChart");
-      if (sibCanvas && (baseSib.length || actSib.length)) {
+      // Sibling overlays: Pass-defend + RP Dual (base vs active)
+      const drawSibling = (meta, pack, hintId, canvasId, fallbackBaseId, fallbackActiveId) => {
+        const hint = document.getElementById(hintId);
+        if (hint && meta) {
+          hint.innerHTML = `${meta.note || ""} Active days <strong style="color:var(--ok)">${pct(meta.active_active_day_rate)}</strong> vs base <strong>${pct(meta.base_active_day_rate)}</strong> · flat <strong style="color:var(--ok)">${pct(meta.active_flat_day_rate)}</strong> vs <strong>${pct(meta.base_flat_day_rate)}</strong>.`;
+        }
+        const baseSib = (pack && pack.base_6m) || curve6[fallbackBaseId] || [];
+        const actSib = (pack && pack.active_6m) || curve6[fallbackActiveId] || [];
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !(baseSib.length || actSib.length)) return;
         const axis = actSib.length >= baseSib.length ? actSib : baseSib;
-        charts.push(new Chart(sibCanvas, {
+        charts.push(new Chart(canvas, {
           type: "line",
           data: {
             labels: axis.map((p) => p.date),
             datasets: [
               {
-                label: `${sib.base_name || "Pass-then-defend"} equity ($)`,
+                label: `${meta?.base_name || "Base"} equity ($)`,
                 data: baseSib.map((p) => p.equity_dollars ?? p.equity),
                 borderColor: "#7aa2ff",
                 tension: 0.05,
@@ -843,7 +848,7 @@
                 order: 2,
               },
               {
-                label: `${sib.active_name || "Active"} equity ($)`,
+                label: `${meta?.active_name || "Active"} equity ($)`,
                 data: actSib.map((p) => p.equity_dollars ?? p.equity),
                 borderColor: "#3dd6c6",
                 tension: 0.05,
@@ -852,7 +857,7 @@
                 order: 2,
               },
               {
-                label: `${sib.base_name || "Base"} profit locked`,
+                label: `${meta?.base_name || "Base"} profit locked`,
                 data: baseSib.map((p) => p.profit_tally_dollars ?? null),
                 borderColor: "#c4b5fd",
                 borderDash: [4, 3],
@@ -862,7 +867,7 @@
                 order: 1,
               },
               {
-                label: `${sib.active_name || "Active"} profit locked`,
+                label: `${meta?.active_name || "Active"} profit locked`,
                 data: actSib.map((p) => p.profit_tally_dollars ?? null),
                 borderColor: "#f0a34a",
                 tension: 0.05,
@@ -888,7 +893,7 @@
             plugins: {
               title: {
                 display: true,
-                text: `6M · Active ${pct(sib.active_active_day_rate)} days in market vs base ${pct(sib.base_active_day_rate)}`,
+                text: `6M · Active ${pct(meta?.active_active_day_rate)} days in market vs base ${pct(meta?.base_active_day_rate)}`,
                 color: "#8aa397",
                 font: { size: 12 },
               },
@@ -900,7 +905,25 @@
             },
           },
         }));
-      }
+      };
+
+      const sibCurves = data.sibling_focus_curves || {};
+      drawSibling(
+        ch.active_sibling || {},
+        sibCurves.pass_defend || { base_6m: sibCurves.base_6m, active_6m: sibCurves.active_6m },
+        "siblingHintPd",
+        "siblingChartPd",
+        "pass_defend",
+        "pass_defend_active",
+      );
+      drawSibling(
+        ch.rp_dual_sibling || {},
+        sibCurves.rp_dual || {},
+        "siblingHintRp",
+        "siblingChartRp",
+        "rp_dual_blend",
+        "rp_dual_blend_active",
+      );
 
       // Killer books — paths that breached −$1,250 daily
       const killBooks = Object.keys(curve2y)
