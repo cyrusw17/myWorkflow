@@ -31,7 +31,22 @@ from src.ftmo_rules import (
     walk_challenge_to_funded,
     walk_daily_withdraw,
 )
-from src.ftmo_strategies import FTMO_TICKERS, STRATEGY_BUILDERS, STRATEGY_META
+from src.ftmo_strategies import (
+    COMMOD,
+    CRYPTO,
+    FTMO_TICKERS,
+    FX,
+    FX_EXTRA,
+    INDICES,
+    RATES_INTL,
+    SECTORS,
+    STOCK_CFD,
+    STOCK_EXTRA,
+    STRATEGY_BUILDERS,
+    STRATEGY_META,
+    TOP10_V1_IDS,
+    VERSION_META,
+)
 from src.metrics import summarize
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +75,9 @@ def activity_stats(rets: pd.Series) -> dict:
     n = max(len(r), 1)
     abs_r = r.abs()
     active = abs_r > 1e-8
+    # ~21 trading days / month → trade-day rate → trades_per_month proxy
+    months = n / 21.0
+    trades_per_month = float(active.sum() / months) if months > 0 else 0.0
     return {
         "active_day_rate": round(float(active.mean()), 4),
         "flat_day_rate": round(float((abs_r < 1e-10).mean()), 4),
@@ -68,6 +86,8 @@ def activity_stats(rets: pd.Series) -> dict:
         "turnover_proxy": round(float(r.diff().abs().mean()), 6),
         "n_active_days": int(active.sum()),
         "n_days": int(n),
+        "trades_per_month": round(trades_per_month, 2),
+        "meets_20tpm": bool(trades_per_month >= 20.0 - 1e-9),
     }
 
 
@@ -602,6 +622,8 @@ def run() -> dict:
         ),
     )
     most_active = max(rows, key=lambda r: r.get("activity", {}).get("active_day_rate", 0.0))
+    most_trades = max(rows, key=lambda r: r.get("activity", {}).get("trades_per_month", 0.0))
+    tpm_ok = sum(1 for r in rows if r.get("activity", {}).get("meets_20tpm"))
     by_id = {r["id"]: r for r in rows}
     pd_active = by_id.get("pass_defend_active")
     pd_base = by_id.get("pass_defend")
@@ -699,12 +721,19 @@ def run() -> dict:
             "end": str(prices.index[-1].date()),
             "n_days": int(len(prices)),
             "tickers": FTMO_TICKERS,
+            "n_strategies": len(rows),
+            "top10_v1": TOP10_V1_IDS,
+            "version_methods": {
+                str(k): {"label": v[0], "thesis": v[1]} for k, v in VERSION_META.items()
+            },
             "groups": {
-                "fx": [t for t in FTMO_TICKERS if t.endswith("=X")],
-                "indices": ["SPY", "QQQ", "DIA", "IWM"],
-                "commod": ["GLD", "SLV", "USO"],
-                "crypto": ["BTC-USD", "ETH-USD"],
-                "stock_cfd": [t for t in FTMO_TICKERS if t.isalpha() and t not in ("SPY", "QQQ", "DIA", "IWM", "GLD", "SLV", "USO")],
+                "fx": FX + FX_EXTRA,
+                "indices": INDICES,
+                "sectors": SECTORS,
+                "rates_intl": RATES_INTL,
+                "commod": COMMOD,
+                "crypto": CRYPTO,
+                "stock_cfd": STOCK_CFD + STOCK_EXTRA,
             },
         },
         "ranking_rubric": {
@@ -770,8 +799,29 @@ def run() -> dict:
                 "name": most_active["name"],
                 "active_day_rate": most_active.get("activity", {}).get("active_day_rate"),
                 "flat_day_rate": most_active.get("activity", {}).get("flat_day_rate"),
+                "trades_per_month": most_active.get("activity", {}).get("trades_per_month"),
                 "composite": most_active["scores"]["composite"],
                 "note": "Highest share of non-flat trading days under the $25k closed-withdraw model.",
+            },
+            "most_trades": {
+                "id": most_trades["id"],
+                "name": most_trades["name"],
+                "trades_per_month": most_trades.get("activity", {}).get("trades_per_month"),
+                "meets_20tpm": most_trades.get("activity", {}).get("meets_20tpm"),
+                "active_day_rate": most_trades.get("activity", {}).get("active_day_rate"),
+                "composite": most_trades["scores"]["composite"],
+                "note": "Highest trade-days / month (target ≥20). Active-day proxy on closed daily PnL.",
+            },
+            "trade_more_board": {
+                "n_strategies": len(rows),
+                "n_meeting_20tpm": tpm_ok,
+                "version_methods": {
+                    str(k): {"label": v[0], "thesis": v[1]} for k, v in VERSION_META.items()
+                },
+                "note": (
+                    "Bakeoff = top-10 V1 books + V2–V5 trade-more variants (~50). "
+                    "V2 faster signals · V3 wide universe · V4 sleeve stack · V5 always-in rebalancer."
+                ),
             },
             "active_sibling": sibling_pack(
                 pd_base,
@@ -844,8 +894,8 @@ def run() -> dict:
                 "Cut sleeve vol so worst day PnL stays well inside −$1,250.",
                 "Prefer books whose closed-withdraw path never touches the $20k floor.",
                 "Raise vol slowly only while rolling fail rate stays <10% AND funded breach stays near 0.",
-                "If the winner sits flat too often, try Pass-then-defend · Active or RP + Dual-mom · Active "
-                "(same cores, shorter signals + softer brake).",
+                "If the winner sits flat too often, promote a V2–V5 trade-more sibling "
+                "(faster signals / wider book / sleeve stack / always-in) that still clears fail-first gates.",
             ],
         },
     }
@@ -880,6 +930,10 @@ def run() -> dict:
         f"locked={best_paycheck['full_2y']['funded_payout']['avg_locked_trader']:.1%}",
         f"fundBreach={best_paycheck['full_2y']['funded_payout']['breach_rate']:.1%}",
         f"hoardLost={best_paycheck['full_2y']['funded_hoard']['avg_unpaid_lost']:.1%}",
+    )
+    print(
+        f"Trade-more: {tpm_ok}/{len(rows)} books ≥20 trade-days/mo · "
+        f"top TPM={most_trades['name']} @ {most_trades.get('activity', {}).get('trades_per_month')}"
     )
     if pd_active and pd_base:
         print(

@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 # --- Universes (Yahoo proxies for FTMO CFD classes) ---
+# Prefer deep, liquid names so daily signals behave like real CFD books.
 FX = [
     "EURUSD=X",
     "GBPUSD=X",
@@ -35,7 +36,16 @@ FX = [
     "EURJPY=X",
     "GBPJPY=X",
 ]
+FX_EXTRA = [
+    "EURGBP=X",
+    "AUDJPY=X",
+    "EURCHF=X",
+    "CADJPY=X",
+    "EURAUD=X",
+]
 INDICES = ["SPY", "QQQ", "DIA", "IWM"]  # US500 / NAS100 / US30 / Russell proxies
+SECTORS = ["XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU"]  # liquid US sectors
+RATES_INTL = ["TLT", "EFA", "EEM"]  # rates + developed/EM beta
 COMMOD = ["GLD", "SLV", "USO"]
 CRYPTO = ["BTC-USD", "ETH-USD"]
 STOCK_CFD = [
@@ -50,8 +60,37 @@ STOCK_CFD = [
     "JPM",
     "XOM",
 ]
+STOCK_EXTRA = [
+    "TSLA",
+    "NFLX",
+    "BAC",
+    "WMT",
+    "COST",
+    "JNJ",
+    "V",
+    "MA",
+    "ORCL",
+    "DIS",
+]
 
-FTMO_TICKERS = FX + INDICES + COMMOD + CRYPTO + STOCK_CFD
+# Core (challenge DNA) + wide (trade-more V3/V5) — all high-ADV proxies
+FTMO_TICKERS = list(
+    dict.fromkeys(
+        FX
+        + FX_EXTRA
+        + INDICES
+        + SECTORS
+        + RATES_INTL
+        + COMMOD
+        + CRYPTO
+        + STOCK_CFD
+        + STOCK_EXTRA
+    )
+)
+WIDE_FX = FX + FX_EXTRA
+WIDE_RISK = INDICES + SECTORS + RATES_INTL + COMMOD + CRYPTO + STOCK_CFD + STOCK_EXTRA
+WIDE_STOCKS = STOCK_CFD + STOCK_EXTRA
+WIDE_ALL = FTMO_TICKERS
 
 
 @dataclass(frozen=True)
@@ -143,8 +182,14 @@ def strat_tsmom_multi(prices: pd.DataFrame, target_vol: float = 0.09) -> pd.Seri
     return _vol_scale_series(raw, target_vol, cap=2.0).rename("tsmom_multi")
 
 
-def strat_xs_mom_stocks(prices: pd.DataFrame, formation: int = 63, n: int = 4, target_vol: float = 0.10) -> pd.Series:
-    cols = _align_cols(prices, STOCK_CFD)
+def strat_xs_mom_stocks(
+    prices: pd.DataFrame,
+    formation: int = 63,
+    n: int = 4,
+    target_vol: float = 0.10,
+    tickers: list[str] | None = None,
+) -> pd.Series:
+    cols = _align_cols(prices, tickers or STOCK_CFD)
     px = prices[cols]
     rets = _safe_rets(px)
     mom = px / px.shift(formation) - 1.0
@@ -156,28 +201,43 @@ def strat_xs_mom_stocks(prices: pd.DataFrame, formation: int = 63, n: int = 4, t
     return _vol_scale_series(raw, target_vol, cap=1.5).rename("xs_mom_stocks")
 
 
-def strat_dual_mom(prices: pd.DataFrame, lookback: int = 126, target_vol: float = 0.08) -> pd.Series:
-    """Relative strength among risk assets; cash if absolute momentum negative."""
-    cols = _align_cols(prices, INDICES + COMMOD + ["BTC-USD"] + STOCK_CFD[:6])
+def strat_dual_mom(
+    prices: pd.DataFrame,
+    lookback: int = 126,
+    target_vol: float = 0.08,
+    tickers: list[str] | None = None,
+    top_n: int = 3,
+    require_abs: bool = True,
+) -> pd.Series:
+    """Relative strength among risk assets; optional cash if absolute momentum negative."""
+    cols = _align_cols(prices, tickers or (INDICES + COMMOD + ["BTC-USD"] + STOCK_CFD[:6]))
     px = prices[cols]
     rets = _safe_rets(px)
     abs_mom = px / px.shift(lookback) - 1.0
-    # Pick top 3 with positive abs mom
     ranks = abs_mom.rank(axis=1, ascending=False)
-    long = ((ranks <= 3) & (abs_mom > 0)).astype(float)
+    if require_abs:
+        long = ((ranks <= top_n) & (abs_mom > 0)).astype(float)
+    else:
+        # Soft absolute filter — stay invested in relative leaders more often
+        long = ((ranks <= top_n) & (abs_mom > -0.03)).astype(float)
     w = long.div(long.sum(axis=1).replace(0, np.nan), axis=0).fillna(0.0)
     raw = _portfolio_from_weights(rets, w, cost_bps=3.0)
     return _vol_scale_series(raw, target_vol, cap=1.8).rename("dual_mom")
 
 
-def strat_risk_parity(prices: pd.DataFrame, target_vol: float = 0.07) -> pd.Series:
-    cols = _align_cols(prices, FX[:6] + INDICES + COMMOD)
+def strat_risk_parity(
+    prices: pd.DataFrame,
+    target_vol: float = 0.07,
+    tickers: list[str] | None = None,
+    vol_lookback: int = 42,
+) -> pd.Series:
+    cols = _align_cols(prices, tickers or (FX[:6] + INDICES + COMMOD))
     px = prices[cols]
     rets = _safe_rets(px)
     # Always long risk parity (defensive)
-    w = _inverse_vol_weights(rets, 42)
+    w = _inverse_vol_weights(rets, vol_lookback)
     raw = _portfolio_from_weights(rets, w, cost_bps=1.5)
-    return _vol_scale_series(raw, target_vol, lookback=42, cap=1.5).rename("risk_parity")
+    return _vol_scale_series(raw, target_vol, lookback=vol_lookback, cap=1.5).rename("risk_parity")
 
 
 def strat_donchian_trend(prices: pd.DataFrame, channel: int = 55, target_vol: float = 0.08) -> pd.Series:
@@ -233,16 +293,22 @@ def strat_crypto_trend(prices: pd.DataFrame, target_vol: float = 0.08) -> pd.Ser
     return _vol_scale_series(raw, target_vol, lookback=14, cap=1.2).rename("crypto_trend")
 
 
-def strat_index_grind(prices: pd.DataFrame, target_vol: float = 0.06) -> pd.Series:
+def strat_index_grind(
+    prices: pd.DataFrame,
+    target_vol: float = 0.06,
+    tickers: list[str] | None = None,
+    lookbacks: tuple[int, ...] = (63, 126),
+    min_breadth: int = 2,
+) -> pd.Series:
     """Ultra-conservative equity-index long: slow TSMOM + tight vol target."""
-    cols = _align_cols(prices, INDICES)
+    cols = _align_cols(prices, tickers or INDICES)
     px = prices[cols]
     rets = _safe_rets(px)
-    sig = _tsmom_signal(px, (63, 126)).clip(lower=0.0)  # long-only
+    sig = _tsmom_signal(px, lookbacks).clip(lower=0.0)  # long-only
     w = sig.div(sig.sum(axis=1).replace(0, np.nan), axis=0).fillna(0.0)
     # Move to cash when breadth weak
     breadth = (sig > 0).sum(axis=1)
-    w = w.mul((breadth >= 2).astype(float), axis=0)
+    w = w.mul((breadth >= min_breadth).astype(float), axis=0)
     raw = _portfolio_from_weights(rets, w, cost_bps=1.0)
     return _vol_scale_series(raw, target_vol, lookback=42, cap=1.2).rename("index_grind")
 
@@ -461,7 +527,283 @@ def strat_rp_dual_blend_active(prices: pd.DataFrame, target_vol: float = 0.10) -
     return apply_daily_brake(out, soft=0.014, hard=0.026, heal=0.28).rename("rp_dual_active")
 
 
-STRATEGY_BUILDERS: dict[str, callable] = {
+# ---------------------------------------------------------------------------
+# Trade-more version engines (V2–V5)
+# Each method raises activity toward ≥20 trade-days / month without peeking.
+# ---------------------------------------------------------------------------
+
+def _sleeve_fast_tsmom(
+    prices: pd.DataFrame,
+    tickers: list[str],
+    lookbacks: tuple[int, ...] = (5, 10, 21),
+    vol_lb: int = 10,
+    target_vol: float = 0.11,
+    cost_bps: float = 2.5,
+) -> pd.Series:
+    cols = _align_cols(prices, tickers)
+    if not cols:
+        return pd.Series(0.0, index=prices.index)
+    px = prices[cols]
+    rets = _safe_rets(px)
+    sig = _tsmom_signal(px, lookbacks)
+    inv = _inverse_vol_weights(rets, lookback=vol_lb)
+    w = sig * inv
+    gross = w.abs().sum(axis=1).replace(0, np.nan)
+    w = w.div(gross, axis=0).fillna(0.0)
+    raw = _portfolio_from_weights(rets, w, cost_bps=cost_bps)
+    return _vol_scale_series(raw, target_vol, lookback=vol_lb, cap=1.9)
+
+
+def _sleeve_donch20(prices: pd.DataFrame, tickers: list[str], channel: int = 20, target_vol: float = 0.09) -> pd.Series:
+    cols = _align_cols(prices, tickers)
+    if len(cols) < 2:
+        return pd.Series(0.0, index=prices.index)
+    px = prices[cols]
+    rets = _safe_rets(px)
+    hi = px.rolling(channel).max()
+    lo = px.rolling(channel).min()
+    prev_hi, prev_lo = hi.shift(1), lo.shift(1)
+    sig = pd.DataFrame(0.0, index=px.index, columns=px.columns)
+    sig = sig.mask(px > prev_hi, 1.0)
+    sig = sig.mask(px < prev_lo, -1.0)
+    sig = sig.replace(0.0, np.nan).ffill().fillna(0.0)
+    inv = _inverse_vol_weights(rets, 15)
+    w = sig * inv
+    gross = w.abs().sum(axis=1).replace(0, np.nan)
+    w = w.div(gross, axis=0).fillna(0.0)
+    raw = _portfolio_from_weights(rets, w, cost_bps=3.0)
+    return _vol_scale_series(raw, target_vol, lookback=15, cap=1.7)
+
+
+def _mix_brake(
+    parts: list[tuple[float, pd.Series]],
+    *,
+    target_vol: float,
+    soft: float,
+    hard: float,
+    heal: float,
+    clip: float,
+    name: str,
+) -> pd.Series:
+    mix = sum(w * s.fillna(0.0) for w, s in parts)
+    mix = mix.clip(-clip, clip)
+    out = _vol_scale_series(mix, target_vol, lookback=18, cap=1.8)
+    return apply_daily_brake(out, soft=soft, hard=hard, heal=heal).rename(name)
+
+
+def _family_of(base_id: str) -> str:
+    if base_id.startswith("pass_defend"):
+        return "pass_defend"
+    if base_id.startswith("rp_dual"):
+        return "rp_dual"
+    if base_id.startswith("xs_mom"):
+        return "xs_mom"
+    if base_id.startswith("dual_mom"):
+        return "dual_mom"
+    if base_id.startswith("risk_parity"):
+        return "risk_parity"
+    if base_id.startswith("index_grind"):
+        return "index_grind"
+    return "generic"
+
+
+def _core_rets(prices: pd.DataFrame, base_id: str) -> pd.Series:
+    return V1_BUILDERS[base_id](prices).reindex(prices.index).fillna(0.0)
+
+
+def version_v2_faster(prices: pd.DataFrame, base_id: str) -> pd.Series:
+    """
+    V2 — Faster multi-horizon signals.
+    Short (5/10/21) TSMOM overlays + shorter dual/XS formation; soft brake heals fast.
+    """
+    core = _core_rets(prices, base_id)
+    fam = _family_of(base_id)
+    fast = _sleeve_fast_tsmom(prices, WIDE_FX + INDICES + COMMOD + CRYPTO, (5, 10, 21), 10, 0.12)
+    if fam == "xs_mom":
+        xs = strat_xs_mom_stocks(prices, formation=21, n=5, target_vol=0.12, tickers=WIDE_STOCKS)
+        return _mix_brake(
+            [(0.35, core), (0.35, xs), (0.30, fast)],
+            target_vol=0.11, soft=0.016, hard=0.030, heal=0.40, clip=0.032, name=f"{base_id}_v2",
+        )
+    if fam == "dual_mom":
+        dual = strat_dual_mom(prices, lookback=42, target_vol=0.13, top_n=4, require_abs=False)
+        return _mix_brake(
+            [(0.30, core), (0.45, dual), (0.25, fast)],
+            target_vol=0.11, soft=0.016, hard=0.030, heal=0.40, clip=0.032, name=f"{base_id}_v2",
+        )
+    if fam == "index_grind":
+        grind = strat_index_grind(
+            prices, target_vol=0.10, tickers=INDICES + SECTORS, lookbacks=(21, 42, 63), min_breadth=1
+        )
+        return _mix_brake(
+            [(0.30, core), (0.40, grind), (0.30, fast)],
+            target_vol=0.10, soft=0.015, hard=0.028, heal=0.40, clip=0.030, name=f"{base_id}_v2",
+        )
+    if fam == "risk_parity":
+        rp = strat_risk_parity(prices, target_vol=0.11, tickers=WIDE_FX[:6] + INDICES + COMMOD, vol_lookback=21)
+        return _mix_brake(
+            [(0.40, core), (0.35, rp), (0.25, fast)],
+            target_vol=0.10, soft=0.015, hard=0.028, heal=0.38, clip=0.028, name=f"{base_id}_v2",
+        )
+    # pass_defend / rp_dual / generic
+    dual = strat_dual_mom(prices, lookback=42, target_vol=0.12, top_n=4, require_abs=False)
+    return _mix_brake(
+        [(0.40, core), (0.30, dual), (0.30, fast)],
+        target_vol=0.11, soft=0.016, hard=0.030, heal=0.40, clip=0.032, name=f"{base_id}_v2",
+    )
+
+
+def version_v3_wide(prices: pd.DataFrame, base_id: str) -> pd.Series:
+    """
+    V3 — Broader liquid universe.
+    Adds sector ETFs, extra FX crosses, mega-cap CFDs, rates/intl — more names → more rotations.
+    """
+    core = _core_rets(prices, base_id)
+    fam = _family_of(base_id)
+    wide_fast = _sleeve_fast_tsmom(prices, WIDE_ALL, (8, 21, 42), 12, 0.11, cost_bps=3.0)
+    xs = strat_xs_mom_stocks(prices, formation=31, n=6, target_vol=0.12, tickers=WIDE_STOCKS)
+    dual = strat_dual_mom(
+        prices,
+        lookback=63,
+        target_vol=0.12,
+        tickers=INDICES + SECTORS + COMMOD + CRYPTO + WIDE_STOCKS[:8],
+        top_n=4,
+        require_abs=False,
+    )
+    rp = strat_risk_parity(
+        prices,
+        target_vol=0.10,
+        tickers=WIDE_FX[:8] + INDICES + SECTORS[:4] + COMMOD + RATES_INTL,
+        vol_lookback=28,
+    )
+    if fam == "xs_mom":
+        parts = [(0.25, core), (0.45, xs), (0.30, wide_fast)]
+    elif fam == "risk_parity":
+        parts = [(0.25, core), (0.45, rp), (0.30, wide_fast)]
+    elif fam == "index_grind":
+        grind = strat_index_grind(
+            prices, target_vol=0.10, tickers=INDICES + SECTORS + RATES_INTL[:1], lookbacks=(21, 63), min_breadth=1
+        )
+        parts = [(0.20, core), (0.40, grind), (0.20, xs), (0.20, wide_fast)]
+    elif fam == "dual_mom":
+        parts = [(0.25, core), (0.45, dual), (0.30, wide_fast)]
+    else:
+        parts = [(0.30, core), (0.25, dual), (0.20, rp), (0.25, wide_fast)]
+    return _mix_brake(
+        parts, target_vol=0.11, soft=0.015, hard=0.028, heal=0.38, clip=0.030, name=f"{base_id}_v3"
+    )
+
+
+def version_v4_stack(prices: pd.DataFrame, base_id: str) -> pd.Series:
+    """
+    V4 — Uncorrelated sleeve stack.
+    Core + fast TSMOM + short Donchian + FX mean-rev so *some* sleeve fires most days.
+    """
+    core = _core_rets(prices, base_id)
+    fast = _sleeve_fast_tsmom(prices, WIDE_FX + INDICES + COMMOD, (5, 10, 21), 10, 0.10)
+    don = _sleeve_donch20(prices, WIDE_FX + INDICES + COMMOD, channel=20, target_vol=0.09)
+    mr = strat_fx_meanrev(prices, lookback=3, z_entry=0.90, target_vol=0.07)
+    # Soften FX MR clip so it doesn't dominate risk budget
+    mr = mr.clip(-0.012, 0.012)
+    return _mix_brake(
+        [(0.40, core), (0.25, fast), (0.20, don), (0.15, mr)],
+        target_vol=0.11,
+        soft=0.016,
+        hard=0.030,
+        heal=0.42,
+        clip=0.032,
+        name=f"{base_id}_v4",
+    )
+
+
+def version_v5_always_in(prices: pd.DataFrame, base_id: str) -> pd.Series:
+    """
+    V5 — Always-in risk-budget rebalancer.
+    Wide inverse-vol spine (never flat) + fast signal tilts + soft dual-mom (weak abs filter).
+    Designed to clear ≥20 trade-days / month under the activity meter.
+    """
+    core = _core_rets(prices, base_id)
+    spine = strat_risk_parity(
+        prices,
+        target_vol=0.09,
+        tickers=WIDE_FX[:8] + INDICES + SECTORS + COMMOD + RATES_INTL,
+        vol_lookback=18,
+    )
+    fast = _sleeve_fast_tsmom(prices, WIDE_ALL, (5, 10, 21, 42), 8, 0.12, cost_bps=3.0)
+    xs = strat_xs_mom_stocks(prices, formation=15, n=6, target_vol=0.12, tickers=WIDE_STOCKS)
+    dual = strat_dual_mom(
+        prices,
+        lookback=31,
+        target_vol=0.11,
+        tickers=INDICES + SECTORS + COMMOD + WIDE_STOCKS[:10],
+        top_n=5,
+        require_abs=False,
+    )
+    fam = _family_of(base_id)
+    if fam == "xs_mom":
+        parts = [(0.15, core), (0.30, spine), (0.35, xs), (0.20, fast)]
+    elif fam == "index_grind":
+        grind = strat_index_grind(
+            prices, target_vol=0.10, tickers=INDICES + SECTORS, lookbacks=(10, 21, 42), min_breadth=1
+        )
+        parts = [(0.15, core), (0.30, spine), (0.30, grind), (0.25, fast)]
+    elif fam == "risk_parity":
+        parts = [(0.20, core), (0.40, spine), (0.20, dual), (0.20, fast)]
+    else:
+        parts = [(0.20, core), (0.30, spine), (0.20, dual), (0.15, xs), (0.15, fast)]
+    return _mix_brake(
+        parts,
+        target_vol=0.115,
+        soft=0.017,
+        hard=0.032,
+        heal=0.48,
+        clip=0.034,
+        name=f"{base_id}_v5",
+    )
+
+
+VERSION_BUILDERS = {
+    2: version_v2_faster,
+    3: version_v3_wide,
+    4: version_v4_stack,
+    5: version_v5_always_in,
+}
+
+VERSION_META = {
+    2: (
+        "V2 Faster signals",
+        "Short multi-horizon TSMOM (5/10/21) + softer brake — more signal flips / month",
+    ),
+    3: (
+        "V3 Wide universe",
+        "Adds liquid sectors, FX crosses, mega-cap CFDs, rates/intl — more names to rotate",
+    ),
+    4: (
+        "V4 Sleeve stack",
+        "Core + fast TSMOM + Donchian-20 + FX mean-rev so at least one sleeve trades most days",
+    ),
+    5: (
+        "V5 Always-in rebalancer",
+        "Wide inverse-vol spine that never goes flat + fast tilts — target ≥20 trade-days / month",
+    ),
+}
+
+
+# V1 books kept for the live bakeoff (current top 10 by composite)
+TOP10_V1_IDS = [
+    "pass_defend",
+    "rp_dual_blend_active",
+    "xs_mom_stocks_vt12",
+    "rp_dual_blend",
+    "pass_defend_active",
+    "dual_mom_vt8",
+    "xs_mom_stocks_vt9",
+    "risk_parity_vt10",
+    "risk_parity_vt7",
+    "index_grind_vt10",
+]
+
+V1_BUILDERS: dict[str, callable] = {
     "rp_dual_blend": lambda p: strat_rp_dual_blend(p, 0.09),
     "rp_dual_blend_active": lambda p: strat_rp_dual_blend_active(p, 0.10),
     "ftmo_grind": lambda p: apply_daily_brake(strat_ftmo_grind(p, 0.07), 0.010, 0.020),
@@ -490,8 +832,7 @@ STRATEGY_BUILDERS: dict[str, callable] = {
     "boll_safe_vt5": lambda p: strat_boll_safe(p, target_vol=0.05),
 }
 
-
-STRATEGY_META: dict[str, StratMeta] = {
+V1_META: dict[str, StratMeta] = {
     "rp_dual_blend": StratMeta(
         "rp_dual_blend",
         "RP + Dual-mom blend",
@@ -675,3 +1016,33 @@ STRATEGY_META: dict[str, StratMeta] = {
         "Indices + FX",
     ),
 }
+
+
+def _register_bakeoff() -> tuple[dict[str, callable], dict[str, StratMeta]]:
+    """
+    Live bakeoff ≈ 50 books: current top-10 V1 + V2–V5 trade-more variants.
+    Research contrast books stay in V1_BUILDERS but are not scored live.
+    """
+    builders: dict[str, callable] = {}
+    meta: dict[str, StratMeta] = {}
+    for sid in TOP10_V1_IDS:
+        builders[sid] = V1_BUILDERS[sid]
+        meta[sid] = V1_META[sid]
+        base_name = V1_META[sid].name
+        base_family = V1_META[sid].family
+        for ver, fn in VERSION_BUILDERS.items():
+            nid = f"{sid}_v{ver}"
+            label, thesis = VERSION_META[ver]
+            # Bind loop vars correctly
+            builders[nid] = (lambda p, _fn=fn, _sid=sid: _fn(p, _sid))
+            meta[nid] = StratMeta(
+                nid,
+                f"{base_name} · {label}",
+                f"{base_family}-v{ver}",
+                f"{thesis}. Parent: {V1_META[sid].thesis}",
+                V1_META[sid].markets if ver != 3 else "Wide liquid multi-asset (sectors + FX crosses + mega-caps)",
+            )
+    return builders, meta
+
+
+STRATEGY_BUILDERS, STRATEGY_META = _register_bakeoff()
