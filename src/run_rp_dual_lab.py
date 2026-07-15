@@ -15,8 +15,8 @@ import numpy as np
 import pandas as pd
 
 from src.data import load_universe
-from src.ftmo_rules import FtmoRules, rolling_challenges, summarize_attempts
-from src.metrics import equity_from_returns, summarize
+from src.ftmo_rules import FtmoRules, dollars, rolling_challenges, summarize_attempts, walk_daily_withdraw
+from src.metrics import summarize
 from src.rp_dual_family import (
     FAMILY_SPECS,
     FAMILY_TICKERS,
@@ -33,32 +33,10 @@ RULES = FtmoRules()
 ATTEMPT_STEP = 5
 
 
-def find_daily_kills(
-    rets: pd.Series,
-    daily_loss: float = 0.05,
-    initial: float = 1.0,
-) -> list[dict]:
-    """
-    Days where closed equity breaches FTMO daily loss:
-    equity < day_start_balance − (daily_loss × initial).
-    """
-    r = rets.fillna(0.0)
-    eq = float(initial)
-    out: list[dict] = []
-    limit = daily_loss * initial
-    for dt, ret in r.items():
-        day_start = eq
-        eq = day_start * (1.0 + float(ret))
-        day_pnl = eq - day_start
-        if eq < day_start - limit - 1e-12:
-            out.append({
-                "date": pd.Timestamp(dt).strftime("%Y-%m-%d"),
-                "equity": round(float(eq), 6),
-                "day_start": round(float(day_start), 6),
-                "day_pnl": round(float(day_pnl), 6),
-                "day_return": round(float(ret), 6),
-            })
-    return out
+def find_daily_kills(rets: pd.Series) -> list[dict]:
+    """Days that breach $1,250 daily or $5k max on the daily-withdraw path."""
+    _eq, kills, _locked = walk_daily_withdraw(rets.fillna(0.0), RULES)
+    return kills
 
 
 def _curve(
@@ -67,9 +45,9 @@ def _curve(
     *,
     kill_days: list[dict] | None = None,
 ) -> list[dict]:
-    """Equity curve; always retains FTMO daily-loss kill days when downsampling."""
-    eq = equity_from_returns(rets.fillna(0.0))
-    kill_dates = {k["date"] for k in (kill_days or [])}
+    """Equity under daily profit-withdraw; retains kill days when downsampling."""
+    eq, kills, _ = walk_daily_withdraw(rets.fillna(0.0), RULES)
+    kill_dates = {k["date"] for k in (kill_days if kill_days is not None else kills)}
     if step > 1 and len(eq) > step * 2:
         keep = set(range(0, len(eq), step))
         keep.add(len(eq) - 1)
@@ -84,6 +62,7 @@ def _curve(
         rows.append({
             "date": d,
             "equity": round(float(val), 6),
+            "equity_dollars": round(dollars(val, RULES), 2),
             "daily_kill": d in kill_dates,
         })
     return rows
@@ -151,9 +130,9 @@ def run() -> dict:
             }
         sc = score_row(full["challenge"], full["metrics"])
         daily = rets.fillna(0.0)
-        kills = find_daily_kills(daily, RULES.daily_loss)
+        kills = find_daily_kills(daily)
         worst_day = float(daily.min()) if len(daily) else 0.0
-        eq = equity_from_returns(daily)
+        eq, _k_all, locked = walk_daily_withdraw(daily, RULES)
         min_eq = float(eq.min()) if len(eq) else 1.0
         row = {
             "id": spec.id,
@@ -174,13 +153,17 @@ def run() -> dict:
             "windows": windows,
             "risk": {
                 "worst_day": worst_day,
+                "worst_day_dollars": round(worst_day * RULES.initial_balance, 2),
                 "daily_headroom": RULES.daily_loss + worst_day,
+                "daily_headroom_dollars": round(RULES.daily_loss_dollars + worst_day * RULES.initial_balance, 2),
                 "min_equity": min_eq,
-                "max_headroom": min_eq - (1.0 - RULES.max_loss),
-                "cleared_daily": worst_day > -RULES.daily_loss,
-                "cleared_max": min_eq > (1.0 - RULES.max_loss),
+                "min_equity_dollars": round(dollars(min_eq, RULES), 2),
+                "max_headroom": min_eq - RULES.max_loss_floor,
+                "cleared_daily": worst_day * RULES.initial_balance > -RULES.daily_loss_dollars,
+                "cleared_max": min_eq > RULES.max_loss_floor,
                 "daily_kill_count": len(kills),
                 "daily_kills": kills,
+                "locked_profit_dollars": round(dollars(locked, RULES), 2),
             },
             "curve_key": spec.id,
         }
@@ -222,7 +205,7 @@ def run() -> dict:
 
     # Baseline focus curves with floor + kill markers
     base_rets = build_rp_dual_family(prices, FAMILY_SPECS[0])[0].reindex(prices.index).fillna(0.0)
-    base_kills = find_daily_kills(base_rets, RULES.daily_loss)
+    base_kills = find_daily_kills(base_rets)
     focus = {}
     for key, days in [("2Y", None), ("6M", 183), ("3M", 92), ("1M", 31)]:
         sliced = _slice(base_rets, end, days)
@@ -237,9 +220,9 @@ def run() -> dict:
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "disclaimer": (
-            "RP + Dual-mom family research on Yahoo CFD proxies. "
-            "Market-cap figures are static approximations for filtering. "
-            "FTMO daily 5% / max 10% rules applied in challenge tallies."
+            f"RP + Dual-mom family on a ${RULES.initial_balance:,.0f} account: "
+            f"fixed ${RULES.daily_loss_dollars:,.0f} daily loss, "
+            f"${RULES.max_loss_dollars:,.0f} max from start, withdraw all day profit daily."
         ),
         "how_to_add": (
             "Append a FamilySpec to src/rp_dual_family.py::FAMILY_SPECS "
@@ -247,11 +230,16 @@ def run() -> dict:
             "`python3 -m src.run_rp_dual_lab`."
         ),
         "rules": {
+            "initial_balance": RULES.initial_balance,
+            "daily_loss_dollars": RULES.daily_loss_dollars,
+            "max_loss_dollars": RULES.max_loss_dollars,
+            "max_loss_floor_dollars": RULES.max_loss_floor_dollars,
             "daily_loss": RULES.daily_loss,
             "max_loss": RULES.max_loss,
-            "max_loss_floor": 1.0 - RULES.max_loss,
+            "max_loss_floor": RULES.max_loss_floor,
             "phase1_target": RULES.phase1_target,
             "phase2_target": RULES.phase2_target,
+            "withdraw_profits_daily": True,
         },
         "universe": {
             "start": str(prices.index[0].date()),

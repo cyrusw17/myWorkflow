@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FTMO Challenge lab — pass rate vs fail tallies</title>
+  <title>$25k prop lab — $1,250 daily / $5k max</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -132,14 +132,15 @@
       <a href="./confluence-lab.html">Confluence boost</a>
       <a href="./dd-lab.html">V2 drawdown lab</a>
       <a href="./funded-lab.html">Funded prop lab</a>
-      <a class="here" href="./ftmo-lab.html">FTMO Challenge lab</a>
+      <a class="here" href="./ftmo-lab.html">$25k prop lab</a>
       <a href="./rp-dual-lab.html">RP + Dual family</a>
     </nav>
 
-    <h1>FTMO Challenge lab</h1>
+    <h1>$25k prop lab</h1>
     <p class="sub">
-      Multi-asset quant bakeoff under classic <strong>FTMO 2-Step</strong> hard limits:
-      <strong>5% daily loss</strong> and <strong>10% static max loss</strong>.
+      Multi-asset quant bakeoff on a <strong>$25,000</strong> account:
+      fixed <strong>$1,250</strong> daily loss · <strong>$5,000</strong> max from start (floor $20k) ·
+      <strong>withdraw all day profit every day</strong>.
       Strategies are ranked fail-first against those floors, then by paycheck discipline once funded.
     </p>
 
@@ -150,10 +151,10 @@
     <section class="panel">
       <h2>Hard limits — winner vs the kill lines</h2>
       <p class="hint">
-        Red line = <strong>90% equity floor</strong> (10% max loss from initial).
-        Orange dashed = <strong>−5% daily loss</strong> reference on the daily chart.
-        If equity touches the floor or a closed day loses ≥5% of initial from day-start, the account fails.
-        <strong style="color:var(--bad)">Red ×</strong> marks every simulated <strong>5% daily-loss kill day</strong>.
+        Red line = <strong>$20,000 floor</strong> ($5k max loss from $25k start).
+        Orange dashed = <strong>−$1,250</strong> daily-loss reference.
+        Ops: withdraw all day profit every green day — equity only falls on losses.
+        <strong style="color:var(--bad)">Red ×</strong> = day PnL through −$1,250 (account kill).
       </p>
       <div class="meters" id="headroomMeters"></div>
       <div class="tabs" id="riskTabs" style="margin-top:0.9rem"></div>
@@ -164,7 +165,7 @@
     </section>
 
     <section class="panel">
-      <h2>Breach board — daily 5% vs max 10%</h2>
+      <h2>Breach board — $1,250 daily vs $5k max</h2>
       <p class="hint">Rolling challenge fails split by rule. Daily loss is usually the account killer industry-wide; we tally both.</p>
       <div class="chart-box"><canvas id="breachChart"></canvas></div>
       <div class="chart-box sm" style="margin-top:0.85rem"><canvas id="dailyHistChart"></canvas></div>
@@ -177,7 +178,7 @@
 
     <section class="panel">
       <h2>Winner equity — focus windows</h2>
-      <p class="hint">Rebased curves for the overall winner. Toggle horizon — 6M / 3M / 1M get emphasis for current regime. <strong style="color:var(--bad)">Red ×</strong> = 5% daily-loss kill day.</p>
+      <p class="hint">Winner equity under daily profit-withdraw. Toggle horizon. <strong style="color:var(--bad)">Red ×</strong> = −$1,250 daily-loss kill day.</p>
       <div class="tabs" id="focusTabs"></div>
       <div class="chart-box"><canvas id="focusChart"></canvas></div>
     </section>
@@ -236,13 +237,13 @@
 
     <section class="panel">
       <h2>Top books overlay (6M)</h2>
-      <p class="hint"><strong style="color:var(--bad)">Red ×</strong> marks any closed day that would have killed the account on the −5% daily-loss rule.</p>
+      <p class="hint"><strong style="color:var(--bad)">Red ×</strong> marks any closed day that would have killed the account on the −$1,250 daily-loss rule.</p>
       <div class="chart-box sm"><canvas id="overlayChart"></canvas></div>
     </section>
 
     <section class="panel">
-      <h2>5% daily-loss kill days</h2>
-      <p class="hint">Every book that closed through <code>day_start − 5% × initial</code>. Safe books (including the winner) stay empty — this panel shows the ones that would have been account-killed.</p>
+      <h2>$1,250 daily-loss kill days</h2>
+      <p class="hint">Every book that closed through <code>day_start − $1,250</code> on the daily-withdraw path. Safe books stay empty — this panel shows the account-killed ones.</p>
       <div class="chart-box"><canvas id="killChart"></canvas></div>
     </section>
 
@@ -267,6 +268,7 @@
 
     const pct = (x) => x == null || Number.isNaN(x) ? "—" : `${(100 * x).toFixed(1)}%`;
     const num = (x, d = 2) => x == null || Number.isNaN(x) ? "—" : Number(x).toFixed(d);
+    const usd = (x, d = 0) => x == null || Number.isNaN(+x) ? "—" : Number(x).toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: d, minimumFractionDigits: d });
 
     async function main() {
       const res = await fetch(`./data/ftmo_lab.json?v=${Date.now()}`, { cache: "no-store" });
@@ -286,19 +288,19 @@
         `Rubric: ${data.ranking_rubric?.composite || ""} · Survival=${data.ranking_rubric?.survival || ""}`;
 
       const rv = data.risk_visuals || {};
-      const lim = rv.limits || { daily_loss: 0.05, max_loss: 0.10, max_loss_floor: 0.90 };
+      const lim = rv.limits || { daily_loss: 0.05, max_loss: 0.20, max_loss_floor: 0.80, daily_loss_dollars: 1250, max_loss_dollars: 5000, max_loss_floor_dollars: 20000, initial_balance: 25000 };
       const env = rv.winner_envelope || {};
 
       document.getElementById("limitCards").innerHTML = `
         <div class="limit-card daily">
           <p class="label">Maximum daily loss</p>
-          <p class="value">${pct(lim.daily_loss)}</p>
-          <p class="desc">Equity cannot drop more than 5% of <em>initial</em> capital from that day’s starting balance (closed-day proxy in this lab). Winner worst day: <strong style="color:var(--ink)">${pct(env.worst_day)}</strong> · headroom ${pct(env.daily_headroom)}.</p>
+          <p class="value">${usd(lim.daily_loss_dollars ?? 1250)}</p>
+          <p class="desc">Fixed dollar daily loss from day-start (not a % of current equity). Winner worst day: <strong style="color:var(--ink)">${usd(env.worst_day_dollars ?? env.worst_day * (lim.initial_balance||25000))}</strong> · headroom ${usd(env.daily_headroom_dollars)}.</p>
         </div>
         <div class="limit-card max">
           <p class="label">Maximum loss (static)</p>
-          <p class="value">${pct(lim.max_loss)}</p>
-          <p class="desc">Hard floor at <strong style="color:var(--ink)">${pct(lim.max_loss_floor)}</strong> of initial — never trails. Winner min equity: <strong style="color:var(--ink)">${num(env.min_equity, 3)}</strong> · room above floor ${pct(env.max_headroom)}.</p>
+          <p class="value">${usd(lim.max_loss_dollars ?? 5000)}</p>
+          <p class="desc">Hard floor at <strong style="color:var(--ink)">${usd(lim.max_loss_floor_dollars ?? 20000)}</strong> from the $25k start — never trails. Winner min equity: <strong style="color:var(--ink)">${usd(env.min_equity_dollars ?? env.min_equity * 25000)}</strong> · room above floor ${usd(env.max_headroom_dollars)}.</p>
         </div>
       `;
 
@@ -308,7 +310,7 @@
       const mClass = mh < 0.25 ? "bad" : mh < 0.5 ? "warn" : "";
       document.getElementById("headroomMeters").innerHTML = `
         <div class="meter">
-          <div class="top"><span>Daily-loss headroom (vs −5%)</span><strong>${env.cleared_daily_limit ? "CLEAR" : "BREACH"} · worst ${pct(env.worst_day)}</strong></div>
+          <div class="top"><span>Daily-loss headroom (vs −$1,250)</span><strong>${env.cleared_daily_limit ? "CLEAR" : "BREACH"} · worst ${pct(env.worst_day)}</strong></div>
           <div class="bar ${dClass}"><span style="width:${(dh * 100).toFixed(1)}%"></span><i class="kill" style="left:0"></i></div>
         </div>
         <div class="meter">
@@ -319,8 +321,8 @@
 
       document.getElementById("badges").innerHTML = `
         <div class="badge ok"><strong>Winner</strong> · ${top?.name || "—"}</div>
-        <div class="badge warn"><strong>Daily limit</strong> · ${pct(-lim.daily_loss)}</div>
-        <div class="badge" style="border-color:#6b2d35;color:var(--bad)"><strong>Max loss</strong> · ${pct(-lim.max_loss)} · floor ${pct(lim.max_loss_floor)}</div>
+        <div class="badge warn"><strong>Daily limit</strong> · ${usd(-(lim.daily_loss_dollars||1250))}</div>
+        <div class="badge" style="border-color:#6b2d35;color:var(--bad)"><strong>Max loss</strong> · ${usd(-(lim.max_loss_dollars||5000))} · floor ${usd(lim.max_loss_floor_dollars||20000)}</div>
         <div class="badge"><strong>2Y full-pass</strong> · ${pct(top?.full_2y?.challenge?.full_pass_rate)}</div>
         <div class="badge ok"><strong>2Y fail</strong> · ${pct(top?.full_2y?.challenge?.fail_rate)} (daily ${top?.full_2y?.challenge?.fail_daily || 0} / max ${top?.full_2y?.challenge?.fail_max || 0})</div>
         <div class="badge"><strong>Sharpe</strong> · ${num(top?.full_2y?.metrics?.sharpe)}</div>
@@ -340,8 +342,8 @@
             labels: path.dates,
             datasets: [
               {
-                label: `${top?.name || "Winner"} equity`,
-                data: path.equity,
+                label: `${top?.name || "Winner"} equity ($)`,
+                data: path.equity_dollars || path.equity,
                 borderColor: "#3dd6c6",
                 tension: 0.05,
                 pointRadius: 0,
@@ -350,8 +352,8 @@
                 order: 2,
               },
               {
-                label: "10% max-loss floor (0.90)",
-                data: path.max_loss_floor,
+                label: "$20k max-loss floor",
+                data: path.max_loss_floor_dollars || path.max_loss_floor,
                 borderColor: "#f07178",
                 borderDash: [6, 4],
                 tension: 0,
@@ -361,8 +363,8 @@
                 order: 3,
               },
               {
-                label: `5% daily-loss KILL (${path.daily_kill_count || 0})`,
-                data: (path.daily_kill || []).map((k, i) => (k ? path.equity[i] : null)),
+                label: `$1,250 daily KILL (${path.daily_kill_count || 0})`,
+                data: (path.daily_kill || []).map((k, i) => (k ? (path.equity_dollars || path.equity)[i] : null)),
                 borderColor: "#f07178",
                 backgroundColor: "#f07178",
                 showLine: false,
@@ -380,8 +382,8 @@
               title: {
                 display: true,
                 text: (path.daily_kill_count || 0)
-                  ? `Equity vs 10% floor · ${key} · ${path.daily_kill_count} daily-loss kill day(s)`
-                  : `Equity vs static 10% floor · ${key} · no 5% daily kills`,
+                  ? `Equity vs $20k floor · ${key} · ${path.daily_kill_count} daily-loss kill day(s)`
+                  : `Equity vs $20k floor · ${key} · no $1,250 daily kills`,
                 color: (path.daily_kill_count || 0) ? "#f07178" : "#8aa397",
                 font: { size: 12 },
               },
@@ -392,7 +394,7 @@
               y: {
                 ticks: { color: "#8aa397" },
                 grid: { color: "#24352f" },
-                suggestedMin: Math.min(0.88, ...path.equity, ...path.max_loss_floor),
+                suggestedMin: path.equity_dollars ? Math.min(19000, ...path.equity_dollars, ...(path.max_loss_floor_dollars||[20000])) : Math.min(0.78, ...path.equity, ...path.max_loss_floor),
               },
             },
           },
@@ -404,8 +406,8 @@
             labels: path.dates,
             datasets: [
               {
-                label: "Daily return",
-                data: path.daily,
+                label: "Daily PnL ($)",
+                data: path.daily_dollars || path.daily,
                 borderColor: "#7aa2ff",
                 tension: 0.05,
                 pointRadius: (path.daily_kill || []).map((k) => (k ? 5 : 0)),
@@ -416,16 +418,16 @@
                 borderWidth: 1.4,
               },
               {
-                label: "−5% daily loss limit",
-                data: path.daily_loss_limit,
+                label: "−$1,250 daily loss",
+                data: path.daily_loss_limit_dollars || path.daily_loss_limit,
                 borderColor: "#f0a34a",
                 borderDash: [5, 4],
                 pointRadius: 0,
                 borderWidth: 2,
               },
               {
-                label: "+5% ref",
-                data: path.daily_gain_ref,
+                label: "+$1,250 ref",
+                data: path.daily_gain_ref_dollars || path.daily_gain_ref,
                 borderColor: "#24352f",
                 borderDash: [2, 4],
                 pointRadius: 0,
@@ -437,7 +439,7 @@
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              title: { display: true, text: `Daily PnL vs −5% limit · ${key}`, color: "#8aa397", font: { size: 12 } },
+              title: { display: true, text: `Daily PnL vs −$1,250 · ${key}`, color: "#8aa397", font: { size: 12 } },
               legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 10 } } },
             },
             scales: {
@@ -467,8 +469,8 @@
         data: {
           labels: board.map((b) => b.name.replace(" vol", "").slice(0, 22)),
           datasets: [
-            { label: "Fails · daily 5%", data: board.map((b) => b.fail_daily), backgroundColor: "#f0a34a" },
-            { label: "Fails · max 10%", data: board.map((b) => b.fail_max), backgroundColor: "#f07178" },
+            { label: "Fails · daily $1,250", data: board.map((b) => b.fail_daily), backgroundColor: "#f0a34a" },
+            { label: "Fails · max $5k", data: board.map((b) => b.fail_max), backgroundColor: "#f07178" },
           ],
         },
         options: {
@@ -501,7 +503,7 @@
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            title: { display: true, text: "Winner daily return distribution — red bin edge ≈ −5% daily kill", color: "#8aa397", font: { size: 12 } },
+            title: { display: true, text: "Winner daily return distribution — red bin edge ≈ −$1,250 daily kill", color: "#8aa397", font: { size: 12 } },
             legend: { display: false },
           },
           scales: {
@@ -584,15 +586,15 @@
         </div>
         <div class="box">
           <h3>Rules modeled</h3>
-          <p>P1 ${pct(rules.phase1_target)} · P2 ${pct(rules.phase2_target)} · Daily ${pct(rules.daily_loss)} · Max static ${pct(rules.max_loss_static)}</p>
+          <p>$25k account · DLL ${usd(rules.daily_loss_dollars||1250)} · Max ${usd(rules.max_loss_dollars||5000)} (floor ${usd(rules.max_loss_floor_dollars||20000)}) · withdraw all day profit · P1 ${pct(rules.phase1_target)} / P2 ${pct(rules.phase2_target)}</p>
           <p>Sim caps: P1 ≤ ${rules.sim_max_days_phase1}d · P2 ≤ ${rules.sim_max_days_phase2}d · attempt every ${rules.attempt_step_days}d</p>
           <p>${data.payout_policy?.assumption || ""}</p>
         </div>
       `;
 
       document.getElementById("metaList").innerHTML = [
-        `<strong style="color:var(--ink)">Hard limits:</strong> daily loss ${pct(lim.daily_loss)} of initial from day-start · static max loss ${pct(lim.max_loss)} (floor ${pct(lim.max_loss_floor)}).`,
-        `Winner clearance: worst day ${pct(env.worst_day)} vs ${pct(-lim.daily_loss)} · min equity ${num(env.min_equity, 3)} vs floor ${pct(lim.max_loss_floor)}.`,
+        `<strong style="color:var(--ink)">Hard limits:</strong> daily loss ${usd(-(lim.daily_loss_dollars||1250))} from day-start · max loss ${usd(-(lim.max_loss_dollars||5000))} from $25k (floor ${usd(lim.max_loss_floor_dollars||20000)}) · withdraw all day profit.`,
+        `Winner clearance: worst day ${usd(env.worst_day_dollars)} vs −$1,250 · min equity ${usd(env.min_equity_dollars)} vs floor $20,000.`,
         `Universe: ${(uni.tickers || []).length} Yahoo proxies — FX ${(uni.groups?.fx || []).length}, indices ${(uni.groups?.indices || []).length}, commod ${(uni.groups?.commod || []).length}, crypto ${(uni.groups?.crypto || []).length}, stock CFDs ${(uni.groups?.stock_cfd || []).length}.`,
         ...(rules.notes || []),
         "Fail tallies = daily-loss + max-loss breaches only. Timeouts are separate (too slow to hit target inside sim cap).",
@@ -625,7 +627,7 @@
                 order: 2,
               },
               {
-                label: "10% max-loss floor (0.90)",
+                label: "$20k max-loss floor",
                 data: series.map(() => lim.max_loss_floor ?? 0.9),
                 borderColor: "#f07178",
                 borderDash: [6, 4],
@@ -635,7 +637,7 @@
                 order: 3,
               },
               {
-                label: `5% daily-loss KILL (${killN})`,
+                label: `$1,250 daily KILL (${killN})`,
                 data: series.map((p) => (p.daily_kill ? p.equity : null)),
                 borderColor: "#f07178",
                 backgroundColor: "#f07178",
@@ -654,8 +656,8 @@
               title: {
                 display: true,
                 text: killN
-                  ? `${killN} day(s) would have killed the account on the 5% daily-loss rule`
-                  : "No 5% daily-loss kill days in this window",
+                  ? `${killN} day(s) would have killed the account on the −$1,250 daily-loss rule`
+                  : "No $1,250 daily-loss kill days in this window",
                 color: killN ? "#f07178" : "#8aa397",
                 font: { size: 12 },
               },
@@ -677,7 +679,7 @@
       };
       drawFocus("6M");
 
-      // Overlay top 5 on 6M — red × marks any 5% daily-loss kill day on each path
+      // Overlay top 5 on 6M — red × marks any $1,250 daily-loss kill day
       const top5 = strat.slice(0, 5);
       const curve6 = data.curves_6m || {};
       const curve2y = data.curves || {};
@@ -686,7 +688,7 @@
         const killN = (curve || []).filter((p) => p.daily_kill).length;
         if (!killN) return null;
         return {
-          label: `${label} · 5% KILL (${killN})`,
+          label: `${label} · $1,250 KILL (${killN})`,
           data: (curve || []).map((p) => (p.daily_kill ? p.equity : null)),
           borderColor: color,
           backgroundColor: "#f07178",
@@ -713,7 +715,7 @@
       });
       if (base.length) {
         overlaySets.push({
-          label: "10% max-loss floor (0.90)",
+          label: "$20k max-loss floor",
           data: base.map(() => lim.max_loss_floor ?? 0.9),
           borderColor: "#f07178",
           borderDash: [6, 4],
@@ -740,8 +742,8 @@
             title: {
               display: true,
               text: topKillN
-                ? `Top books vs 10% floor · 6M · ${topKillN} daily-loss kill day(s) marked`
-                : "Top books vs 10% static floor · 6M · no 5% daily kills in top books",
+                ? `Top books vs $20k floor · 6M · ${topKillN} daily-loss kill day(s) marked`
+                : "Top books vs $20k floor · 6M · no $1,250 daily kills in top books",
               color: topKillN ? "#f07178" : "#8aa397",
               font: { size: 12 },
             },
@@ -749,12 +751,12 @@
           },
           scales: {
             x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
-            y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, suggestedMin: 0.88 },
+            y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, suggestedMin: 0.78 },
           },
         },
       }));
 
-      // Killer books chart — paths that actually breached the 5% daily-loss rule
+      // Killer books — paths that breached −$1,250 daily
       const killBooks = Object.keys(curve2y)
         .map((id) => {
           const c = curve2y[id] || [];
@@ -789,7 +791,7 @@
           });
         });
         killSets.push({
-          label: "10% max-loss floor (0.90)",
+          label: "$20k max-loss floor",
           data: axis.map(() => lim.max_loss_floor ?? 0.9),
           borderColor: "#f07178",
           borderDash: [6, 4],
@@ -808,7 +810,7 @@
             plugins: {
               title: {
                 display: true,
-                text: `Kill-day museum · ${killBooks.length} book(s) · ${totalKills} day(s) that would have killed on −5% daily`,
+                text: `Kill-day museum · ${killBooks.length} book(s) · ${totalKills} day(s) that would have killed on −$1,250 daily`,
                 color: "#f07178",
                 font: { size: 12 },
               },
@@ -816,14 +818,14 @@
             },
             scales: {
               x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
-              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, suggestedMin: 0.85 },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, suggestedMin: 0.75 },
             },
           },
         }));
       } else if (killCanvas) {
         killCanvas.parentElement.insertAdjacentHTML(
           "beforeend",
-          `<p class="hint" style="padding:0.75rem 1rem">No strategy in this bake-off closed a day through the −5% daily-loss limit.</p>`,
+          `<p class="hint" style="padding:0.75rem 1rem">No strategy in this bake-off closed a day through the −$1,250 daily-loss limit.</p>`,
         );
       }
     }

@@ -1,13 +1,16 @@
 """
-FTMO 2-Step Challenge rule simulator (research approximation).
+Prop-account rule simulator (research approximation).
 
-Classic 2-Step objectives (verify live before trading):
-  Phase 1 profit target: +10% of initial
-  Phase 2 profit target: +5% of initial
-  Max daily loss: 5% of initial (floor = day-start balance − 5% initial)
-  Max loss: 10% static from initial (equity ≥ 90%)
-  Min trading days: 4 per phase
-  No hard time limit (we still cap look-ahead for simulation)
+Operating assumption (user):
+  Account size:          $25,000
+  Daily loss limit:      $1,250 fixed (not a % of current equity)
+  Max loss from start:   $5,000  → equity floor $20,000
+  Each day: withdraw all day profit so the account never compounds above
+            the post-drawdown day-start (cushion does not rebuild from wins)
+
+Challenge-phase targets (kept for bakeoff scoring; equity must grow so
+challenge walks do NOT withdraw mid-phase):
+  Phase 1: +10% of initial · Phase 2: +5% of initial · min 4 trading days
 
 Daily loss / equity use closed daily PnL as a proxy (no intraday marks).
 """
@@ -22,14 +25,103 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class FtmoRules:
+    # Dollar account (canonical display + absolute limits)
+    initial_balance: float = 25_000.0
+    daily_loss_dollars: float = 1_250.0  # fixed $ from day-start balance
+    max_loss_dollars: float = 5_000.0  # static from initial → floor $20k
+    # Unit-equity equivalents (initial = 1.0): $1250/$25k = 0.05, $5k/$25k = 0.20
     phase1_target: float = 0.10
     phase2_target: float = 0.05
-    daily_loss: float = 0.05  # of initial
-    max_loss: float = 0.10  # of initial (static floor)
+    daily_loss: float = 1_250.0 / 25_000.0  # fraction of INITIAL, subtracted from day-start
+    max_loss: float = 5_000.0 / 25_000.0  # fraction of INITIAL (static floor at 0.80)
     min_trading_days: int = 4
     # FTMO 2-Step has no hard time limit; we still cap so rolling sims finish.
     max_days_phase1: int = 252
     max_days_phase2: int = 180
+
+    @property
+    def max_loss_floor(self) -> float:
+        return 1.0 - self.max_loss
+
+    @property
+    def max_loss_floor_dollars(self) -> float:
+        return self.initial_balance - self.max_loss_dollars
+
+
+def dollars(frac: float, rules: FtmoRules | None = None) -> float:
+    """Convert unit-equity fraction to dollars on the modeled account."""
+    r = rules or FtmoRules()
+    return float(frac) * r.initial_balance
+
+
+def walk_daily_withdraw(
+    rets: pd.Series,
+    rules: FtmoRules | None = None,
+    *,
+    stop_on_breach: bool = True,
+) -> tuple[pd.Series, list[dict], float]:
+    """
+    Equity path with "withdraw all day profit" ops.
+
+    - Loss days stick (account balance falls).
+    - Profit days withdraw the day's PnL → equity stays at day_start.
+    - Daily kill: post-trade equity < day_start − $1,250 (0.05 of initial).
+    - Max kill: post-trade equity < $20,000 (0.80 of initial).
+
+    By default stops at the first breach (account is dead). Returns
+    (equity_series, kill_events, locked_profit_frac).
+    """
+    rules = rules or FtmoRules()
+    r = rets.fillna(0.0)
+    eq = 1.0
+    locked = 0.0
+    eqs: list[float] = []
+    kills: list[dict] = []
+    floor = rules.max_loss_floor
+    daily_abs = rules.daily_loss  # fraction of initial
+    dead = False
+
+    for dt, ret in r.items():
+        if dead:
+            eqs.append(eq)
+            continue
+        day_start = eq
+        gross = day_start * (1.0 + float(ret))
+        day_pnl = gross - day_start
+        daily_kill = gross < day_start - daily_abs - 1e-12
+        max_kill = gross < floor - 1e-12
+        if daily_kill or max_kill:
+            kills.append({
+                "date": pd.Timestamp(dt).strftime("%Y-%m-%d"),
+                "equity": round(float(gross), 6),
+                "equity_dollars": round(dollars(gross, rules), 2),
+                "day_start": round(float(day_start), 6),
+                "day_start_dollars": round(dollars(day_start, rules), 2),
+                "day_pnl": round(float(day_pnl), 6),
+                "day_pnl_dollars": round(dollars(day_pnl, rules), 2),
+                "day_return": round(float(ret), 6),
+                "reason": "daily" if daily_kill else "max",
+                "daily_kill": bool(daily_kill),
+                "max_kill": bool(max_kill),
+            })
+            eq = gross
+            eqs.append(eq)
+            if stop_on_breach:
+                dead = True
+            elif day_pnl > 0:
+                locked += day_pnl
+                eq = day_start
+                eqs[-1] = eq
+            continue
+        if day_pnl > 0:
+            locked += day_pnl
+            eq = day_start  # withdraw all profit
+        else:
+            eq = gross
+        eqs.append(eq)
+
+    equity = pd.Series(eqs, index=r.index, dtype=float)
+    return equity, kills, float(locked)
 
 
 @dataclass
@@ -63,7 +155,7 @@ def _run_phase(
     """Walk daily returns from equity=1.0 under FTMO static/daily floors."""
     eq = 1.0
     peak = 1.0
-    floor = 1.0 - rules.max_loss
+    floor = rules.max_loss_floor
     trading_days = 0
     min_eq = 1.0
     hit_day = None
@@ -245,16 +337,19 @@ class PayoutPolicy:
     """
     Funded-account pay-yourself-out policy.
 
-    Premise: a breach zeros unpaid open profit. Locked payouts survive.
-    We assume the agent fairly consistently withdraws rather than compounding
-    a tall unpaid PnL stack.
+    Default ops (user): withdraw ALL day profit every closed day so equity never
+    compounds above the post-drawdown day-start. Locked payouts survive a breach;
+    unpaid open profit (usually just same-day PnL under this mode) does not.
     """
 
-    every_n_days: int = 10  # check cadence (trading days)
-    min_profit: float = 0.01  # need ≥1% open profit to withdraw
-    keep_buffer: float = 0.005  # leave a thin cushion above initial after payout
-    trader_split: float = 0.80  # FTMO base split
+    every_n_days: int = 1  # 1 = every trading day
+    min_profit: float = 0.0  # any day profit is withdrawn
+    keep_buffer: float = 0.0
+    trader_split: float = 0.80
     max_days: int = 252
+    # day_pnl: pull that day's gain back to day_start (default).
+    # above_initial: older cadence pull of equity − (1 + keep_buffer).
+    mode: str = "day_pnl"
 
 
 @dataclass
@@ -280,9 +375,9 @@ def simulate_funded_payouts(
     """
     Walk a funded account with regular withdrawals.
 
-    Equity starts at 1.0 (initial). Floor stays at 1 − max_loss (static).
-    On payout: move (equity − 1 − keep_buffer) into locked_gross and reset equity.
-    On breach: unpaid open profit max(equity − 1, 0) is lost; locked_gross kept.
+    Default (day_pnl): apply return → check $1,250 daily / $5k max → if the day
+    is profitable, withdraw day PnL so equity returns to day_start (cushion never
+    rebuilds from wins after a drawdown).
     """
     rules = rules or FtmoRules()
     policy = policy or PayoutPolicy()
@@ -295,34 +390,44 @@ def simulate_funded_payouts(
         )
 
     eq = 1.0
-    floor = 1.0 - rules.max_loss
+    floor = rules.max_loss_floor
     locked = 0.0
     payouts: list[float] = []
     min_eq = 1.0
-    peak_since_pay = 1.0  # peak equity since last payout (for unpaid-loss accounting)
+    peak_since_pay = 1.0
     status = "survived"
     days_since_payout = 0
     last_i = -1
     n = len(path)
+    breach_day_pnl = 0.0
 
     for i, (dt, r) in enumerate(path.items()):
         last_i = i
         day_start = eq
         daily_floor = day_start - rules.daily_loss
-        eq *= 1.0 + float(r)
+        eq = day_start * (1.0 + float(r))
+        day_pnl = eq - day_start
         min_eq = min(min_eq, eq)
         peak_since_pay = max(peak_since_pay, eq)
         days_since_payout += 1
 
         if eq < daily_floor - 1e-12:
             status = "fail_daily"
+            breach_day_pnl = max(day_pnl, 0.0)
             break
         if eq < floor - 1e-12:
             status = "fail_max"
+            breach_day_pnl = max(day_pnl, 0.0)
             break
 
-        # Pay-yourself-out check
-        if days_since_payout >= policy.every_n_days:
+        if policy.mode == "day_pnl":
+            if days_since_payout >= policy.every_n_days and day_pnl > policy.min_profit + 1e-12:
+                locked += day_pnl
+                payouts.append(float(day_pnl))
+                eq = day_start
+                peak_since_pay = eq
+                days_since_payout = 0
+        elif days_since_payout >= policy.every_n_days:
             open_profit = eq - 1.0
             withdrawable = eq - (1.0 + policy.keep_buffer)
             if open_profit >= policy.min_profit and withdrawable > 1e-12:
@@ -334,15 +439,17 @@ def simulate_funded_payouts(
 
     unpaid_lost = 0.0
     if status.startswith("fail_"):
-        # Breach after a run-up still burns the unpaid tower even if equity finishes < 1.0
-        unpaid_lost = max(peak_since_pay - 1.0, 0.0)
+        if policy.mode == "day_pnl":
+            unpaid_lost = float(breach_day_pnl)  # usually 0 on a loss-day kill
+        else:
+            unpaid_lost = max(peak_since_pay - 1.0, 0.0)
     else:
-        # Survived available path: harvest remaining eligible profit as a final paycheck
-        withdrawable = eq - (1.0 + policy.keep_buffer)
-        if withdrawable > 1e-12 and (eq - 1.0) >= policy.min_profit * 0.5:
-            locked += withdrawable
-            payouts.append(float(withdrawable))
-            eq = 1.0 + policy.keep_buffer
+        if policy.mode != "day_pnl":
+            withdrawable = eq - (1.0 + policy.keep_buffer)
+            if withdrawable > 1e-12 and (eq - 1.0) >= policy.min_profit * 0.5:
+                locked += withdrawable
+                payouts.append(float(withdrawable))
+                eq = 1.0 + policy.keep_buffer
         if last_i + 1 >= n and n < min(40, policy.max_days):
             status = "censored"
 
@@ -378,7 +485,7 @@ def simulate_funded_hoard(
         )
 
     eq = 1.0
-    floor = 1.0 - rules.max_loss
+    floor = rules.max_loss_floor
     min_eq = 1.0
     peak = 1.0
     status = "survived"
