@@ -140,7 +140,7 @@
     <p class="sub">
       Multi-asset quant bakeoff on a <strong>$25,000</strong> account:
       fixed <strong>$1,250</strong> daily loss · <strong>$5,000</strong> max from start (floor $20k) ·
-      <strong>withdraw all day profit every day</strong>.
+      <strong>withdraw closed excess only when ≥ $25k</strong>.
       Strategies are ranked fail-first against those floors, then by paycheck discipline once funded.
     </p>
 
@@ -153,8 +153,8 @@
       <p class="hint">
         Red line = <strong>$20,000 floor</strong> ($5k max loss from $25k start).
         Orange dashed = <strong>−$1,250</strong> daily-loss reference.
-        Ops: withdraw all day profit every green day — equity only falls on losses.
-        <strong style="color:var(--b)">Gold line</strong> = cumulative withdrawn profit (the tally that matters).
+        Ops: only closed EOD equity counts; withdraw excess above $25k only (nothing while underwater).
+        <strong style="color:var(--b)">Gold line</strong> = cumulative locked profit (only from closed excess above $25k).
         <strong style="color:var(--ink)">White/teal dashed</strong> = equity + locked profit.
         <strong style="color:var(--bad)">Red ×</strong> = account kill (−$1,250 daily or −$5k max).
       </p>
@@ -180,7 +180,7 @@
 
     <section class="panel">
       <h2>Winner equity — focus windows</h2>
-      <p class="hint">Winner equity under daily profit-withdraw. Toggle horizon. <strong style="color:var(--bad)">Red ×</strong> = −$1,250 daily-loss kill day.</p>
+      <p class="hint">Winner equity under closed-above-$25k withdrawals. Toggle horizon. <strong style="color:var(--bad)">Red ×</strong> = −$1,250 daily-loss kill day.</p>
       <div class="tabs" id="focusTabs"></div>
       <div class="chart-box"><canvas id="focusChart"></canvas></div>
     </section>
@@ -614,14 +614,14 @@
         </div>
         <div class="box">
           <h3>Rules modeled</h3>
-          <p>$25k account · DLL ${usd(rules.daily_loss_dollars||1250)} · Max ${usd(rules.max_loss_dollars||5000)} (floor ${usd(rules.max_loss_floor_dollars||20000)}) · withdraw all day profit · P1 ${pct(rules.phase1_target)} / P2 ${pct(rules.phase2_target)}</p>
+          <p>$25k account · DLL ${usd(rules.daily_loss_dollars||1250)} · Max ${usd(rules.max_loss_dollars||5000)} (floor ${usd(rules.max_loss_floor_dollars||20000)}) · closed excess ≥$25k only · P1 ${pct(rules.phase1_target)} / P2 ${pct(rules.phase2_target)}</p>
           <p>Sim caps: P1 ≤ ${rules.sim_max_days_phase1}d · P2 ≤ ${rules.sim_max_days_phase2}d · attempt every ${rules.attempt_step_days}d</p>
           <p>${data.payout_policy?.assumption || ""}</p>
         </div>
       `;
 
       document.getElementById("metaList").innerHTML = [
-        `<strong style="color:var(--ink)">Hard limits:</strong> daily loss ${usd(-(lim.daily_loss_dollars||1250))} from day-start · max loss ${usd(-(lim.max_loss_dollars||5000))} from $25k (floor ${usd(lim.max_loss_floor_dollars||20000)}) · withdraw all day profit.`,
+        `<strong style="color:var(--ink)">Hard limits:</strong> daily loss ${usd(-(lim.daily_loss_dollars||1250))} from day-start · max loss ${usd(-(lim.max_loss_dollars||5000))} from $25k (floor ${usd(lim.max_loss_floor_dollars||20000)}) · closed excess ≥$25k only.`,
         `Winner clearance: worst day ${usd(env.worst_day_dollars)} vs −$1,250 · min equity ${usd(env.min_equity_dollars)} vs floor $20,000.`,
         `Universe: ${(uni.tickers || []).length} Yahoo proxies — FX ${(uni.groups?.fx || []).length}, indices ${(uni.groups?.indices || []).length}, commod ${(uni.groups?.commod || []).length}, crypto ${(uni.groups?.crypto || []).length}, stock CFDs ${(uni.groups?.stock_cfd || []).length}.`,
         ...(rules.notes || []),

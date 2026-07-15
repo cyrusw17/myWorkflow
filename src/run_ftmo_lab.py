@@ -40,14 +40,14 @@ OUT = SITE_DATA / "ftmo_lab.json"
 START = "2023-07-01"
 RULES = FtmoRules()
 ATTEMPT_STEP = 5
-# Living policy: withdraw all day profit every closed day.
+# Living policy: withdraw closed excess only when equity ≥ $25k.
 PAYOUT = PayoutPolicy(
     every_n_days=1,
     min_profit=0.0,
     keep_buffer=0.0,
     trader_split=0.80,
     max_days=252,
-    mode="day_pnl",
+    mode="above_initial",
 )
 FUNDED_STEP = 10
 
@@ -565,7 +565,8 @@ def run() -> dict:
             f"Research model: ${RULES.initial_balance:,.0f} account, fixed "
             f"${RULES.daily_loss_dollars:,.0f} daily loss, "
             f"${RULES.max_loss_dollars:,.0f} max loss from start "
-            f"(floor ${RULES.max_loss_floor_dollars:,.0f}), withdraw ALL day profit every day. "
+            f"(floor ${RULES.max_loss_floor_dollars:,.0f}). "
+            "Withdraw closed excess only when equity ≥ $25k (nothing while underwater; no open/floating PnL). "
             "Yahoo daily proxies ≠ live fills/swaps/intraday marks."
         ),
         "rules": {
@@ -587,9 +588,10 @@ def run() -> dict:
             "notes": [
                 f"Daily loss is a fixed ${RULES.daily_loss_dollars:,.0f} from day-start — not a % of current equity.",
                 f"Max loss is ${RULES.max_loss_dollars:,.0f} from the ${RULES.initial_balance:,.0f} start (floor ${RULES.max_loss_floor_dollars:,.0f}).",
-                "Every green day: withdraw 100% of that day's profit; equity only ratchets down on losses.",
+                "Withdrawals use closed EOD equity only — no open / floating position PnL.",
+                "Nothing is withdrawable while equity < $25k; only excess above $25k is locked, then equity resets to $25k.",
                 "Challenge phases still require equity growth (no mid-phase withdraw) so pass rates stay measurable.",
-                "Kill × markers use the funded daily-withdraw path.",
+                "Kill × markers use the funded closed-withdraw path.",
                 "Fail tallies count daily-loss and max-loss breaches; timeouts are separate.",
             ],
         },
@@ -614,7 +616,7 @@ def run() -> dict:
             "composite": "0.45 survival + 0.25 payout + 0.20 return + 0.10 improvement",
         },
         "payout_policy": {
-            "assumption": "Withdraw ALL day profit every closed day — cushion never rebuilds from wins after a drawdown.",
+            "assumption": "Withdraw closed excess above $25k only. Underwater = $0 withdrawable until back at initial.",
             "every_n_trading_days": PAYOUT.every_n_days,
             "min_open_profit": PAYOUT.min_profit,
             "keep_buffer": PAYOUT.keep_buffer,
@@ -680,15 +682,15 @@ def run() -> dict:
                 "After a −$250–400 day, cut exposure rather than revenge-trading into the $1,250 wall.",
             ],
             "payout_ops": [
-                "Every green day: withdraw 100% of that day's profit — do not rebuild cushion in-account.",
-                "Only locked withdrawals count as real money; unpaid open PnL under this mode is ~same-day only.",
-                f"After a red day, size off the new lower day-start; the ${RULES.daily_loss_dollars:,.0f} DLL stays fixed in dollars.",
-                "Skipping a green-day withdraw reintroduces unpaid-tower risk — don't.",
+                "Only withdraw after positions are closed for the day (EOD equity).",
+                "If account < $25k: withdraw $0 — let equity rebuild to initial first.",
+                "If account > $25k: pull excess down to $25k and lock that paycheck.",
+                f"After a red day, size off the new day-start; the ${RULES.daily_loss_dollars:,.0f} DLL stays fixed in dollars.",
                 "Track locked dollars withdrawn; that is the real scoreboard under this ops mode.",
             ],
             "improvement_levers": [
                 "Cut sleeve vol so worst day PnL stays well inside −$1,250.",
-                "Prefer books whose daily-withdraw path never touches the $20k floor.",
+                "Prefer books whose closed-withdraw path never touches the $20k floor.",
                 "Raise vol slowly only while rolling fail rate stays <10% AND funded breach stays near 0.",
             ],
         },
