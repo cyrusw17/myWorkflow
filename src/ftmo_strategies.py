@@ -425,8 +425,45 @@ def strat_rp_dual_blend(prices: pd.DataFrame, target_vol: float = 0.09) -> pd.Se
     return apply_daily_brake(out, 0.009, 0.016).rename("rp_dual")
 
 
+def strat_rp_dual_blend_active(prices: pd.DataFrame, target_vol: float = 0.10) -> pd.Series:
+    """
+    Higher-trade-frequency sibling of RP + Dual-mom blend.
+
+    Same RP + dual + grind DNA, but:
+      - shorter dual-mom lookback (63d) and faster RP vol window
+      - fast multi-horizon TSMOM sleeve so the book stays engaged when dual-mom cashes out
+      - slightly more dual/TSMOM weight vs slow RP
+      - looser daily clip + softer/faster brake → fewer flat days
+    """
+    rp = strat_risk_parity(prices, target_vol=0.11)
+    # Faster RP: shorter inverse-vol window (already baked at 42 in helper — blend with short TSMOM)
+    dual = strat_dual_mom(prices, lookback=63, target_vol=0.12)
+    grind = strat_index_grind(prices, target_vol=0.09)
+
+    cols = _align_cols(prices, FX + INDICES + COMMOD + CRYPTO)
+    px = prices[cols]
+    rets = _safe_rets(px)
+    sig = _tsmom_signal(px, (10, 21, 42))
+    inv = _inverse_vol_weights(rets, lookback=15)
+    w = (sig * inv)
+    gross = w.abs().sum(axis=1).replace(0, np.nan)
+    w = w.div(gross, axis=0).fillna(0.0)
+    fast = _vol_scale_series(_portfolio_from_weights(rets, w, cost_bps=2.0), 0.10, lookback=15, cap=1.7)
+
+    mix = (
+        0.42 * rp.fillna(0.0)
+        + 0.28 * dual.fillna(0.0)
+        + 0.10 * grind.fillna(0.0)
+        + 0.20 * fast.fillna(0.0)
+    )
+    mix = mix.clip(-0.024, 0.024)
+    out = _vol_scale_series(mix, target_vol, lookback=21, cap=1.65)
+    return apply_daily_brake(out, soft=0.014, hard=0.026, heal=0.28).rename("rp_dual_active")
+
+
 STRATEGY_BUILDERS: dict[str, callable] = {
     "rp_dual_blend": lambda p: strat_rp_dual_blend(p, 0.09),
+    "rp_dual_blend_active": lambda p: strat_rp_dual_blend_active(p, 0.10),
     "ftmo_grind": lambda p: apply_daily_brake(strat_ftmo_grind(p, 0.07), 0.010, 0.020),
     "ftmo_grind_raw": lambda p: strat_ftmo_grind(p, 0.07),
     "challenge_sprint": lambda p: apply_daily_brake(strat_challenge_sprinter(p, 0.12), 0.011, 0.020),
@@ -460,6 +497,13 @@ STRATEGY_META: dict[str, StratMeta] = {
         "RP + Dual-mom blend",
         "survival",
         "55%→62% risk-parity + dual-mom + index grind @ ~9% vol with daily brake — fail-first design",
+        "FX + indices + commod + stocks",
+    ),
+    "rp_dual_blend_active": StratMeta(
+        "rp_dual_blend_active",
+        "RP + Dual-mom · Active",
+        "survival",
+        "Higher-frequency sibling of RP + Dual: shorter dual-mom, fast TSMOM sleeve, softer brake — trades more often",
         "FX + indices + commod + stocks",
     ),
     "ftmo_grind": StratMeta(

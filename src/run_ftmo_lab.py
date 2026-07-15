@@ -569,8 +569,27 @@ def run() -> dict:
     )
     most_active = max(rows, key=lambda r: r.get("activity", {}).get("active_day_rate", 0.0))
     by_id = {r["id"]: r for r in rows}
-    active_sibling = by_id.get("pass_defend_active")
-    base_sibling = by_id.get("pass_defend")
+    pd_active = by_id.get("pass_defend_active")
+    pd_base = by_id.get("pass_defend")
+    rp_active = by_id.get("rp_dual_blend_active")
+    rp_base = by_id.get("rp_dual_blend")
+
+    def sibling_pack(base, active, *, base_id: str, active_id: str, note: str) -> dict:
+        return {
+            "base_id": base_id,
+            "active_id": active_id,
+            "base_name": (base or {}).get("name"),
+            "active_name": (active or {}).get("name"),
+            "base_active_day_rate": (base or {}).get("activity", {}).get("active_day_rate"),
+            "active_active_day_rate": (active or {}).get("activity", {}).get("active_day_rate"),
+            "base_flat_day_rate": (base or {}).get("activity", {}).get("flat_day_rate"),
+            "active_flat_day_rate": (active or {}).get("activity", {}).get("flat_day_rate"),
+            "base_composite": (base or {}).get("scores", {}).get("composite"),
+            "active_composite": (active or {}).get("scores", {}).get("composite"),
+            "base_rank": (base or {}).get("rank"),
+            "active_rank": (active or {}).get("rank"),
+            "note": note,
+        }
 
     # Winner recent window curves for UI
     winner_rets = STRATEGY_BUILDERS[winner["id"]](prices).reindex(prices.index).fillna(0.0)
@@ -697,26 +716,39 @@ def run() -> dict:
                 "composite": most_active["scores"]["composite"],
                 "note": "Highest share of non-flat trading days under the $25k closed-withdraw model.",
             },
-            "active_sibling": {
-                "base_id": "pass_defend",
-                "active_id": "pass_defend_active",
-                "base_name": (base_sibling or {}).get("name"),
-                "active_name": (active_sibling or {}).get("name"),
-                "base_active_day_rate": (base_sibling or {}).get("activity", {}).get("active_day_rate"),
-                "active_active_day_rate": (active_sibling or {}).get("activity", {}).get("active_day_rate"),
-                "base_flat_day_rate": (base_sibling or {}).get("activity", {}).get("flat_day_rate"),
-                "active_flat_day_rate": (active_sibling or {}).get("activity", {}).get("flat_day_rate"),
-                "base_composite": (base_sibling or {}).get("scores", {}).get("composite"),
-                "active_composite": (active_sibling or {}).get("scores", {}).get("composite"),
-                "note": (
+            "active_sibling": sibling_pack(
+                pd_base,
+                pd_active,
+                base_id="pass_defend",
+                active_id="pass_defend_active",
+                note=(
                     "Pass-then-defend · Active is the higher-frequency sibling of the top book: "
                     "shorter momentum lookbacks, fast TSMOM sleeve, softer brake → far fewer flat days."
                 ),
-            },
+            ),
+            "rp_dual_sibling": sibling_pack(
+                rp_base,
+                rp_active,
+                base_id="rp_dual_blend",
+                active_id="rp_dual_blend_active",
+                note=(
+                    "RP + Dual-mom · Active keeps the RP/dual/grind core but adds a fast TSMOM sleeve, "
+                    "shorter dual-mom lookback, and softer brake so it trades more often."
+                ),
+            ),
         },
         "strategies": rows,
         "winner_focus_curves": focus_curves,
         "sibling_focus_curves": {
+            "pass_defend": {
+                "base_6m": curves.get("pass_defend__6m", []),
+                "active_6m": curves.get("pass_defend_active__6m", []),
+            },
+            "rp_dual": {
+                "base_6m": curves.get("rp_dual_blend__6m", []),
+                "active_6m": curves.get("rp_dual_blend_active__6m", []),
+            },
+            # Back-compat aliases used by older page snippets
             "base_6m": curves.get("pass_defend__6m", []),
             "active_6m": curves.get("pass_defend_active__6m", []),
         },
@@ -743,7 +775,8 @@ def run() -> dict:
                 "Cut sleeve vol so worst day PnL stays well inside −$1,250.",
                 "Prefer books whose closed-withdraw path never touches the $20k floor.",
                 "Raise vol slowly only while rolling fail rate stays <10% AND funded breach stays near 0.",
-                "If the winner sits flat too often, try Pass-then-defend · Active (same skeleton, shorter signals + softer brake).",
+                "If the winner sits flat too often, try Pass-then-defend · Active or RP + Dual-mom · Active "
+                "(same cores, shorter signals + softer brake).",
             ],
         },
     }
@@ -779,13 +812,19 @@ def run() -> dict:
         f"fundBreach={best_paycheck['full_2y']['funded_payout']['breach_rate']:.1%}",
         f"hoardLost={best_paycheck['full_2y']['funded_hoard']['avg_unpaid_lost']:.1%}",
     )
-    if active_sibling and base_sibling:
+    if pd_active and pd_base:
         print(
-            "Active sibling:",
-            active_sibling["name"],
-            f"active={active_sibling['activity']['active_day_rate']:.0%}",
-            f"(base {base_sibling['activity']['active_day_rate']:.0%} flat→{base_sibling['activity']['flat_day_rate']:.0%})",
-            f"composite={active_sibling['scores']['composite']:.3f}",
+            "Pass-defend Active:",
+            f"active={pd_active['activity']['active_day_rate']:.0%}",
+            f"(base {pd_base['activity']['active_day_rate']:.0%})",
+            f"composite={pd_active['scores']['composite']:.3f}",
+        )
+    if rp_active and rp_base:
+        print(
+            "RP Dual Active:",
+            f"active={rp_active['activity']['active_day_rate']:.0%}",
+            f"(base {rp_base['activity']['active_day_rate']:.0%})",
+            f"composite={rp_active['scores']['composite']:.3f}",
         )
     return payload
 
