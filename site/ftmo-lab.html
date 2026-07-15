@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FTMO Challenge lab — pass rate vs fail tallies</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg0: #0c1210; --bg1: #14201c; --ink: #e8f0ec; --muted: #8aa397;
+      --line: #24352f; --a: #3dd6c6; --b: #f0a34a; --ok: #7dffb3; --bad: #f07178;
+      --spy: #7aa2ff; --v2: #c4b5fd;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(1100px 560px at 12% -10%, #1a3a32 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #241e18 0%, transparent 52%),
+        var(--bg0);
+      color: var(--ink); min-height: 100vh;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 1.25rem 0.9rem 3.5rem; }
+    @media (min-width: 720px) { main { padding: 2rem 1.25rem 4rem; } }
+    nav.top { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    nav.top a {
+      color: var(--a); text-decoration: none; border: 1px solid var(--line);
+      background: var(--bg1); padding: 0.35rem 0.65rem; font-size: 0.82rem;
+    }
+    nav.top a.here { color: var(--ink); border-color: #2d6b4f; }
+    h1 { font-size: clamp(1.4rem, 5vw, 2.2rem); letter-spacing: -0.03em; margin: 0 0 0.35rem; }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; max-width: 50rem; line-height: 1.45; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    .badge {
+      border: 1px solid var(--line); background: var(--bg1);
+      padding: 0.35rem 0.6rem; font-size: 0.78rem; color: var(--muted);
+    }
+    .badge strong { color: var(--ink); }
+    .badge.ok { border-color: #2d6b4f; color: var(--ok); }
+    .badge.warn { border-color: #6b4a2d; color: var(--b); }
+    .panel {
+      border: 1px solid var(--line); background: rgba(20,32,28,0.85);
+      padding: 0.85rem 0.75rem 0.75rem; margin-bottom: 1rem;
+    }
+    .panel h2 {
+      margin: 0 0 0.75rem; font-size: 0.92rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .hint { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+    .champ-grid {
+      display: grid; grid-template-columns: 1fr; gap: 0.75rem;
+    }
+    @media (min-width: 800px) { .champ-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .box {
+      border: 1px solid var(--line); background: rgba(12,18,16,0.45); padding: 0.75rem;
+    }
+    .box.primary { border-color: #2d6b4f; }
+    .box h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+    .box p, .box li { color: var(--muted); font-size: 0.82rem; line-height: 1.45; margin: 0.25rem 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th, td { text-align: left; padding: 0.45rem 0.35rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .up { color: var(--ok); } .down { color: var(--bad); }
+    .chart-box { position: relative; width: 100%; height: 360px; }
+    .chart-box.sm { height: 280px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+    .tabs button {
+      border: 1px solid var(--line); background: var(--bg1); color: var(--muted);
+      padding: 0.3rem 0.6rem; font-size: 0.78rem; cursor: pointer;
+    }
+    .tabs button.on { color: var(--ink); border-color: #2d6b4f; }
+    .checklist { color: var(--muted); font-size: 0.88rem; line-height: 1.5; padding-left: 1.1rem; }
+    .checklist li { margin-bottom: 0.35rem; }
+    .limits {
+      display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-bottom: 1rem;
+    }
+    @media (min-width: 720px) { .limits { grid-template-columns: 1fr 1fr; } }
+    .limit-card {
+      border: 1px solid var(--line); background: rgba(12,18,16,0.7);
+      padding: 1rem 0.9rem 0.85rem; position: relative; overflow: hidden;
+    }
+    .limit-card.daily { border-color: #6b4a2d; }
+    .limit-card.max { border-color: #6b2d35; }
+    .limit-card .label {
+      color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em;
+      text-transform: uppercase; margin: 0 0 0.35rem;
+    }
+    .limit-card .value {
+      font-size: clamp(1.8rem, 5vw, 2.6rem); font-weight: 700; letter-spacing: -0.03em;
+      margin: 0 0 0.35rem; line-height: 1;
+    }
+    .limit-card.daily .value { color: var(--b); }
+    .limit-card.max .value { color: var(--bad); }
+    .limit-card .desc { color: var(--muted); font-size: 0.82rem; line-height: 1.4; margin: 0; }
+    .meters {
+      display: grid; grid-template-columns: 1fr; gap: 0.65rem; margin-top: 0.85rem;
+    }
+    @media (min-width: 720px) { .meters { grid-template-columns: 1fr 1fr; } }
+    .meter {
+      border: 1px solid var(--line); background: rgba(12,18,16,0.45); padding: 0.7rem 0.75rem;
+    }
+    .meter .top {
+      display: flex; justify-content: space-between; gap: 0.5rem;
+      font-size: 0.78rem; color: var(--muted); margin-bottom: 0.35rem;
+    }
+    .meter .top strong { color: var(--ink); }
+    .meter .bar {
+      height: 0.55rem; background: #24352f; border-radius: 2px; overflow: hidden; position: relative;
+    }
+    .meter .bar > span {
+      display: block; height: 100%; background: var(--a);
+    }
+    .meter .bar.warn > span { background: var(--b); }
+    .meter .bar.bad > span { background: var(--bad); }
+    .meter .bar .kill {
+      position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--bad);
+    }
+    .split-charts {
+      display: grid; grid-template-columns: 1fr; gap: 0.85rem;
+    }
+    @media (min-width: 900px) { .split-charts { grid-template-columns: 1.2fr 0.8fr; } }
+    footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
+    a { color: var(--a); }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="top">
+      <a href="./index.html">Bake-off</a>
+      <a href="./confluence-lab.html">Confluence boost</a>
+      <a href="./dd-lab.html">V2 drawdown lab</a>
+      <a href="./funded-lab.html">Funded prop lab</a>
+      <a class="here" href="./ftmo-lab.html">FTMO Challenge lab</a>
+    </nav>
+
+    <h1>FTMO Challenge lab</h1>
+    <p class="sub">
+      Multi-asset quant bakeoff under classic <strong>FTMO 2-Step</strong> hard limits:
+      <strong>5% daily loss</strong> and <strong>10% static max loss</strong>.
+      Strategies are ranked fail-first against those floors, then by paycheck discipline once funded.
+    </p>
+
+    <div class="limits" id="limitCards"></div>
+    <div class="row" id="badges"></div>
+    <p class="hint" id="disclaimer"></p>
+
+    <section class="panel">
+      <h2>Hard limits — winner vs the kill lines</h2>
+      <p class="hint">
+        Red line = <strong>90% equity floor</strong> (10% max loss from initial).
+        Orange dashed = <strong>−5% daily loss</strong> reference on the daily chart.
+        If equity touches the floor or a closed day ≤ −5% vs day-start, the account fails.
+      </p>
+      <div class="meters" id="headroomMeters"></div>
+      <div class="tabs" id="riskTabs" style="margin-top:0.9rem"></div>
+      <div class="split-charts">
+        <div class="chart-box"><canvas id="equityFloorChart"></canvas></div>
+        <div class="chart-box sm"><canvas id="dailyLimitChart"></canvas></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Breach board — daily 5% vs max 10%</h2>
+      <p class="hint">Rolling challenge fails split by rule. Daily loss is usually the account killer industry-wide; we tally both.</p>
+      <div class="chart-box"><canvas id="breachChart"></canvas></div>
+      <div class="chart-box sm" style="margin-top:0.85rem"><canvas id="dailyHistChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Champions</h2>
+      <div class="champ-grid" id="champions"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Winner equity — focus windows</h2>
+      <p class="hint">Rebased curves for the overall winner. Toggle horizon — 6M / 3M / 1M get emphasis for current regime.</p>
+      <div class="tabs" id="focusTabs"></div>
+      <div class="chart-box"><canvas id="focusChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Strategy board — 2Y challenge tallies</h2>
+      <p class="hint" id="rubric"></p>
+      <div style="overflow-x:auto">
+        <table id="stratTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Strategy</th>
+              <th>Composite</th>
+              <th>Full pass</th>
+              <th>Fail rate</th>
+              <th>Fails</th>
+              <th>Daily / Max</th>
+              <th>Timeouts</th>
+              <th>Avg days</th>
+              <th>Sharpe</th>
+              <th>CAGR</th>
+              <th>MaxDD</th>
+              <th>Locked pay</th>
+              <th>Fund breach</th>
+              <th>Unpaid lost</th>
+              <th>vs hoard lost</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Recent windows — 6M / 3M / 1M</h2>
+      <p class="hint">Continuous path metrics + single challenge started at window open. Rolling 2-step counts are thin on short horizons (often censored).</p>
+      <div style="overflow-x:auto">
+        <table id="windowTable">
+          <thead>
+            <tr>
+              <th>Strategy</th>
+              <th>Win</th>
+              <th>Return</th>
+              <th>Sharpe</th>
+              <th>MaxDD</th>
+              <th>Single-shot</th>
+              <th>Path daily hits</th>
+              <th>Path max breach</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Top books overlay (6M)</h2>
+      <div class="chart-box sm"><canvas id="overlayChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Playbook</h2>
+      <div class="champ-grid" id="playbook"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Universe & rules</h2>
+      <ul class="checklist" id="metaList"></ul>
+    </section>
+
+    <footer>
+      Generate: <code>python3 -m src.run_ftmo_lab</code> · Yahoo daily proxies ≠ FTMO fills/swaps/intraday marks.
+    </footer>
+  </main>
+
+  <script>
+    const COLORS = ["#3dd6c6", "#f0a34a", "#7aa2ff", "#c4b5fd", "#7dffb3", "#f07178", "#e8c47c", "#8ecae6"];
+    const charts = [];
+
+    const pct = (x) => x == null || Number.isNaN(x) ? "—" : `${(100 * x).toFixed(1)}%`;
+    const num = (x, d = 2) => x == null || Number.isNaN(x) ? "—" : Number(x).toFixed(d);
+
+    async function main() {
+      const res = await fetch(`./data/ftmo_lab.json?v=${Date.now()}`, { cache: "no-store" });
+      const data = await res.json();
+      render(data);
+    }
+
+    function render(data) {
+      const strat = data.strategies || [];
+      const top = strat[0];
+      const ch = data.champions || {};
+      const uni = data.universe || {};
+      const rules = data.rules || {};
+
+      document.getElementById("disclaimer").textContent = data.disclaimer || "";
+      document.getElementById("rubric").textContent =
+        `Rubric: ${data.ranking_rubric?.composite || ""} · Survival=${data.ranking_rubric?.survival || ""}`;
+
+      const rv = data.risk_visuals || {};
+      const lim = rv.limits || { daily_loss: 0.05, max_loss: 0.10, max_loss_floor: 0.90 };
+      const env = rv.winner_envelope || {};
+
+      document.getElementById("limitCards").innerHTML = `
+        <div class="limit-card daily">
+          <p class="label">Maximum daily loss</p>
+          <p class="value">${pct(lim.daily_loss)}</p>
+          <p class="desc">Equity cannot drop more than 5% of <em>initial</em> capital from that day’s starting balance (closed-day proxy in this lab). Winner worst day: <strong style="color:var(--ink)">${pct(env.worst_day)}</strong> · headroom ${pct(env.daily_headroom)}.</p>
+        </div>
+        <div class="limit-card max">
+          <p class="label">Maximum loss (static)</p>
+          <p class="value">${pct(lim.max_loss)}</p>
+          <p class="desc">Hard floor at <strong style="color:var(--ink)">${pct(lim.max_loss_floor)}</strong> of initial — never trails. Winner min equity: <strong style="color:var(--ink)">${num(env.min_equity, 3)}</strong> · room above floor ${pct(env.max_headroom)}.</p>
+        </div>
+      `;
+
+      const dh = Math.max(0, Math.min(1, (env.daily_headroom ?? 0) / (lim.daily_loss || 0.05)));
+      const mh = Math.max(0, Math.min(1, (env.max_headroom ?? 0) / (lim.max_loss || 0.10)));
+      const dClass = dh < 0.25 ? "bad" : dh < 0.5 ? "warn" : "";
+      const mClass = mh < 0.25 ? "bad" : mh < 0.5 ? "warn" : "";
+      document.getElementById("headroomMeters").innerHTML = `
+        <div class="meter">
+          <div class="top"><span>Daily-loss headroom (vs −5%)</span><strong>${env.cleared_daily_limit ? "CLEAR" : "BREACH"} · worst ${pct(env.worst_day)}</strong></div>
+          <div class="bar ${dClass}"><span style="width:${(dh * 100).toFixed(1)}%"></span><i class="kill" style="left:0"></i></div>
+        </div>
+        <div class="meter">
+          <div class="top"><span>Max-loss headroom (vs 90% floor)</span><strong>${env.cleared_max_floor ? "CLEAR" : "BREACH"} · min eq ${num(env.min_equity, 3)}</strong></div>
+          <div class="bar ${mClass}"><span style="width:${(mh * 100).toFixed(1)}%"></span><i class="kill" style="left:0"></i></div>
+        </div>
+      `;
+
+      document.getElementById("badges").innerHTML = `
+        <div class="badge ok"><strong>Winner</strong> · ${top?.name || "—"}</div>
+        <div class="badge warn"><strong>Daily limit</strong> · ${pct(-lim.daily_loss)}</div>
+        <div class="badge" style="border-color:#6b2d35;color:var(--bad)"><strong>Max loss</strong> · ${pct(-lim.max_loss)} · floor ${pct(lim.max_loss_floor)}</div>
+        <div class="badge"><strong>2Y full-pass</strong> · ${pct(top?.full_2y?.challenge?.full_pass_rate)}</div>
+        <div class="badge ok"><strong>2Y fail</strong> · ${pct(top?.full_2y?.challenge?.fail_rate)} (daily ${top?.full_2y?.challenge?.fail_daily || 0} / max ${top?.full_2y?.challenge?.fail_max || 0})</div>
+        <div class="badge"><strong>Sharpe</strong> · ${num(top?.full_2y?.metrics?.sharpe)}</div>
+      `;
+
+      // Risk path charts (equity vs floor + daily vs −5%)
+      const drawRisk = (key) => {
+        const path = key === "6M" ? rv.winner_path_6m : rv.winner_path_2y;
+        if (!path) return;
+        [...document.querySelectorAll("#riskTabs button")].forEach((b) => b.classList.toggle("on", b.dataset.k === key));
+        const killEq = charts.filter(c => c.canvas && (c.canvas.id === "equityFloorChart" || c.canvas.id === "dailyLimitChart"));
+        killEq.forEach((c) => { c.destroy(); charts.splice(charts.indexOf(c), 1); });
+
+        charts.push(new Chart(document.getElementById("equityFloorChart"), {
+          type: "line",
+          data: {
+            labels: path.dates,
+            datasets: [
+              {
+                label: `${top?.name || "Winner"} equity`,
+                data: path.equity,
+                borderColor: "#3dd6c6",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.2,
+                fill: false,
+              },
+              {
+                label: "10% max-loss floor (0.90)",
+                data: path.max_loss_floor,
+                borderColor: "#f07178",
+                borderDash: [6, 4],
+                tension: 0,
+                pointRadius: 0,
+                borderWidth: 2,
+                fill: false,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: { display: true, text: `Equity vs static 10% floor · ${key}`, color: "#8aa397", font: { size: 12 } },
+              legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 11 } } },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 7 }, grid: { color: "#24352f" } },
+              y: {
+                ticks: { color: "#8aa397" },
+                grid: { color: "#24352f" },
+                suggestedMin: Math.min(0.88, ...path.equity, ...path.max_loss_floor),
+              },
+            },
+          },
+        }));
+
+        charts.push(new Chart(document.getElementById("dailyLimitChart"), {
+          type: "line",
+          data: {
+            labels: path.dates,
+            datasets: [
+              {
+                label: "Daily return",
+                data: path.daily,
+                borderColor: "#7aa2ff",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.4,
+              },
+              {
+                label: "−5% daily loss limit",
+                data: path.daily_loss_limit,
+                borderColor: "#f0a34a",
+                borderDash: [5, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+              },
+              {
+                label: "+5% ref",
+                data: path.daily_gain_ref,
+                borderColor: "#24352f",
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 1,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: { display: true, text: `Daily PnL vs −5% limit · ${key}`, color: "#8aa397", font: { size: 12 } },
+              legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 10 } } },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 6 }, grid: { color: "#24352f" } },
+              y: {
+                ticks: { color: "#8aa397", callback: (v) => `${(100 * v).toFixed(0)}%` },
+                grid: { color: "#24352f" },
+                suggestedMin: -0.06,
+                suggestedMax: 0.06,
+              },
+            },
+          },
+        }));
+      };
+      const riskTabs = document.getElementById("riskTabs");
+      riskTabs.innerHTML = ["6M", "2Y"].map((k) => `<button type="button" data-k="${k}">${k}</button>`).join("");
+      riskTabs.onclick = (e) => {
+        const b = e.target.closest("button");
+        if (b) drawRisk(b.dataset.k);
+      };
+      drawRisk("6M");
+
+      // Breach board stacked bars
+      const board = (rv.breach_board || []).slice().sort((a, b) => a.rank - b.rank).slice(0, 12);
+      charts.push(new Chart(document.getElementById("breachChart"), {
+        type: "bar",
+        data: {
+          labels: board.map((b) => b.name.replace(" vol", "").slice(0, 22)),
+          datasets: [
+            { label: "Fails · daily 5%", data: board.map((b) => b.fail_daily), backgroundColor: "#f0a34a" },
+            { label: "Fails · max 10%", data: board.map((b) => b.fail_max), backgroundColor: "#f07178" },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: { display: true, text: "Challenge fail tallies by hard rule (2Y rolling)", color: "#8aa397", font: { size: 12 } },
+            legend: { labels: { color: "#8aa397", boxWidth: 10 } },
+          },
+          scales: {
+            x: { stacked: true, ticks: { color: "#8aa397", maxRotation: 45, minRotation: 30, font: { size: 10 } }, grid: { display: false } },
+            y: { stacked: true, ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, title: { display: true, text: "Fail counts", color: "#8aa397" } },
+          },
+        },
+      }));
+
+      // Daily hist vs −5%
+      const hist = rv.daily_hist || { centers: [], counts: [], daily_limit: -0.05 };
+      charts.push(new Chart(document.getElementById("dailyHistChart"), {
+        type: "bar",
+        data: {
+          labels: (hist.centers || []).map((c) => `${(100 * c).toFixed(1)}%`),
+          datasets: [{
+            label: "Winner daily returns (2Y)",
+            data: hist.counts || [],
+            backgroundColor: (hist.centers || []).map((c) => c <= (hist.daily_limit || -0.05) ? "#f07178" : c < -0.02 ? "#f0a34a" : "#3dd6c6"),
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: { display: true, text: "Winner daily return distribution — red bin edge ≈ −5% daily kill", color: "#8aa397", font: { size: 12 } },
+            legend: { display: false },
+          },
+          scales: {
+            x: { ticks: { color: "#8aa397", maxTicksLimit: 10, font: { size: 9 } }, grid: { display: false } },
+            y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
+          },
+        },
+      }));
+
+      const card = (title, body) => `<div class="box ${title.startsWith("Overall") ? "primary" : ""}"><h3>${title}</h3>${body}</div>`;
+      document.getElementById("champions").innerHTML = [
+        card("Overall winner", `<p><strong style="color:var(--ink)">${ch.overall?.name || "—"}</strong></p><p>${ch.overall?.why || ""}</p>`),
+        card("Least failures", `<p><strong style="color:var(--ink)">${ch.least_fails?.name || "—"}</strong></p><p>Fail rate ${pct(ch.least_fails?.fail_rate)} · ${ch.least_fails?.fails || 0} fails / ${ch.least_fails?.attempts || 0} scored attempts</p>`),
+        card("Best paycheck (funded)", `<p><strong style="color:var(--ink)">${ch.best_paycheck?.name || "—"}</strong></p><p>Avg locked trader payout ${pct(ch.best_paycheck?.avg_locked_trader)} · funded breach ${pct(ch.best_paycheck?.fund_breach_rate)}</p><p>Unpaid lost if paying out ${pct(ch.best_paycheck?.avg_unpaid_lost)} vs hoarding ${pct(ch.best_paycheck?.hoard_unpaid_lost)}</p><p>${ch.best_paycheck?.note || ""}</p>`),
+        card("Most room to improve", `<p><strong style="color:var(--ink)">${ch.most_room_to_improve?.name || "—"}</strong></p><p>Improvement ${num(ch.most_room_to_improve?.improvement_room, 3)}</p><p>${ch.most_room_to_improve?.note || ""}</p>`),
+      ].join("");
+
+      document.querySelector("#stratTable tbody").innerHTML = strat.map((s) => {
+        const c = s.full_2y.challenge;
+        const m = s.full_2y.metrics;
+        return `<tr>
+          <td>${s.rank}</td>
+          <td><strong>${s.name}</strong><div class="hint" style="margin:0">${s.family} · ${s.markets}</div></td>
+          <td class="num"><strong>${num(s.scores.composite, 3)}</strong></td>
+          <td class="num up">${pct(c.full_pass_rate)}</td>
+          <td class="num ${c.fail_rate > 0.15 ? "down" : "up"}">${pct(c.fail_rate)}</td>
+          <td class="num">${c.fails}/${c.n_attempts}</td>
+          <td class="num">${c.fail_daily} / ${c.fail_max}</td>
+          <td class="num">${c.timeouts}</td>
+          <td class="num">${c.avg_days_to_full_pass == null ? "—" : num(c.avg_days_to_full_pass, 0)}</td>
+          <td class="num">${num(m.sharpe)}</td>
+          <td class="num">${pct(m.cagr)}</td>
+          <td class="num ${Math.abs(m.max_dd) > 0.1 ? "down" : ""}">${pct(m.max_dd)}</td>
+          <td class="num up">${pct(s.full_2y.funded_payout?.avg_locked_trader)}</td>
+          <td class="num ${(s.full_2y.funded_payout?.breach_rate || 0) > 0.1 ? "down" : "up"}">${pct(s.full_2y.funded_payout?.breach_rate)}</td>
+          <td class="num">${pct(s.full_2y.funded_payout?.avg_unpaid_lost)}</td>
+          <td class="num">${pct(s.full_2y.funded_hoard?.avg_unpaid_lost)}</td>
+        </tr>`;
+      }).join("");
+
+      const winRows = [];
+      for (const s of strat.slice(0, 10)) {
+        for (const w of ["6M", "3M", "1M"]) {
+          const win = s.windows[w];
+          const shot = win.single_shot;
+          const pb = win.path_breaches || {};
+          winRows.push(`<tr>
+            <td>${s.name}</td>
+            <td>${w}</td>
+            <td class="num ${win.metrics.total_return >= 0 ? "up" : "down"}">${pct(win.metrics.total_return)}</td>
+            <td class="num">${num(win.metrics.sharpe)}</td>
+            <td class="num">${pct(win.metrics.max_dd)}</td>
+            <td>${shot ? shot.status : "—"}</td>
+            <td class="num">${pb.daily_loss_events ?? "—"}</td>
+            <td class="${pb.max_loss_breach ? "down" : "up"}">${pb.max_loss_breach ? "YES" : "no"}</td>
+          </tr>`);
+        }
+      }
+      document.querySelector("#windowTable tbody").innerHTML = winRows.join("");
+
+      const pb = data.playbook || {};
+      document.getElementById("playbook").innerHTML = `
+        <div class="box primary">
+          <h3>Recommended for FTMO 2-Step</h3>
+          <p><strong style="color:var(--ink)">${(strat.find(s => s.id === pb.recommended) || top || {}).name || pb.recommended}</strong></p>
+          <p>${(strat.find(s => s.id === pb.recommended) || top || {}).thesis || ""}</p>
+        </div>
+        <div class="box">
+          <h3>Pay-yourself-out ops</h3>
+          <ul class="checklist">${(pb.payout_ops || []).map(x => `<li>${x}</li>`).join("")}</ul>
+          <p style="margin-top:0.5rem">Policy: every ${data.payout_policy?.every_n_trading_days ?? 10}d when ≥${pct(data.payout_policy?.min_open_profit)} open · keep ${pct(data.payout_policy?.keep_buffer)} buffer · ${pct(data.payout_policy?.trader_split)} trader split</p>
+        </div>
+        <div class="box">
+          <h3>Challenge ops</h3>
+          <ul class="checklist">${(pb.challenge_ops || []).map(x => `<li>${x}</li>`).join("")}</ul>
+        </div>
+        <div class="box">
+          <h3>Improvement levers</h3>
+          <ul class="checklist">${(pb.improvement_levers || []).map(x => `<li>${x}</li>`).join("")}</ul>
+        </div>
+        <div class="box">
+          <h3>Rules modeled</h3>
+          <p>P1 ${pct(rules.phase1_target)} · P2 ${pct(rules.phase2_target)} · Daily ${pct(rules.daily_loss)} · Max static ${pct(rules.max_loss_static)}</p>
+          <p>Sim caps: P1 ≤ ${rules.sim_max_days_phase1}d · P2 ≤ ${rules.sim_max_days_phase2}d · attempt every ${rules.attempt_step_days}d</p>
+          <p>${data.payout_policy?.assumption || ""}</p>
+        </div>
+      `;
+
+      document.getElementById("metaList").innerHTML = [
+        `<strong style="color:var(--ink)">Hard limits:</strong> daily loss ${pct(lim.daily_loss)} of initial from day-start · static max loss ${pct(lim.max_loss)} (floor ${pct(lim.max_loss_floor)}).`,
+        `Winner clearance: worst day ${pct(env.worst_day)} vs ${pct(-lim.daily_loss)} · min equity ${num(env.min_equity, 3)} vs floor ${pct(lim.max_loss_floor)}.`,
+        `Universe: ${(uni.tickers || []).length} Yahoo proxies — FX ${(uni.groups?.fx || []).length}, indices ${(uni.groups?.indices || []).length}, commod ${(uni.groups?.commod || []).length}, crypto ${(uni.groups?.crypto || []).length}, stock CFDs ${(uni.groups?.stock_cfd || []).length}.`,
+        ...(rules.notes || []),
+        "Fail tallies = daily-loss + max-loss breaches only. Timeouts are separate (too slow to hit target inside sim cap).",
+        "Mean-reversion / naked crypto underperformed fail-first ranking — trend + risk-parity dominated.",
+      ].map((t) => `<li>${t}</li>`).join("");
+
+      // Focus chart
+      const focus = data.winner_focus_curves || {};
+      const tabs = document.getElementById("focusTabs");
+      let focusKey = "6M";
+      const drawFocus = (key) => {
+        focusKey = key;
+        [...tabs.querySelectorAll("button")].forEach((b) => b.classList.toggle("on", b.dataset.k === key));
+        const series = focus[key] || [];
+        const existing = charts.find(c => c.canvas.id === "focusChart");
+        if (existing) { existing.destroy(); charts.splice(charts.indexOf(existing), 1); }
+        charts.push(new Chart(document.getElementById("focusChart"), {
+          type: "line",
+          data: {
+            labels: series.map((p) => p.date),
+            datasets: [
+              {
+                label: `${top?.name || "Winner"} · ${key}`,
+                data: series.map((p) => p.equity),
+                borderColor: "#3dd6c6",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2,
+              },
+              {
+                label: "10% max-loss floor (0.90)",
+                data: series.map(() => lim.max_loss_floor ?? 0.9),
+                borderColor: "#f07178",
+                borderDash: [6, 4],
+                tension: 0,
+                pointRadius: 0,
+                borderWidth: 1.8,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: "#8aa397" } } },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
+            },
+          },
+        }));
+      };
+      tabs.innerHTML = ["1M", "3M", "6M", "2Y"].map((k) =>
+        `<button type="button" data-k="${k}">${k}</button>`
+      ).join("");
+      tabs.onclick = (e) => {
+        const b = e.target.closest("button");
+        if (b) drawFocus(b.dataset.k);
+      };
+      drawFocus("6M");
+
+      // Overlay top 5 on 6M
+      const top5 = strat.slice(0, 5);
+      const base = data.curves_6m?.[top5[0]?.id] || [];
+      const overlaySets = top5.map((s, i) => ({
+        label: s.name,
+        data: (data.curves_6m?.[s.id] || []).map((p) => p.equity),
+        borderColor: COLORS[i % COLORS.length],
+        tension: 0.05,
+        pointRadius: 0,
+        borderWidth: i === 0 ? 2.4 : 1.5,
+      }));
+      if (base.length) {
+        overlaySets.push({
+          label: "10% max-loss floor (0.90)",
+          data: base.map(() => lim.max_loss_floor ?? 0.9),
+          borderColor: "#f07178",
+          borderDash: [6, 4],
+          tension: 0,
+          pointRadius: 0,
+          borderWidth: 1.8,
+        });
+      }
+      charts.push(new Chart(document.getElementById("overlayChart"), {
+        type: "line",
+        data: {
+          labels: base.map((p) => p.date),
+          datasets: overlaySets,
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: { display: true, text: "Top books vs 10% static floor · 6M", color: "#8aa397", font: { size: 12 } },
+            legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 11 } } },
+          },
+          scales: {
+            x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
+            y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, suggestedMin: 0.88 },
+          },
+        },
+      }));
+    }
+
+    main().catch((e) => {
+      document.body.insertAdjacentHTML("beforeend", `<p style="color:#f07178;padding:1rem">Failed to load ftmo_lab.json: ${e}</p>`);
+    });
+  </script>
+</body>
+</html>

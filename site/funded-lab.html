@@ -100,6 +100,7 @@
       <a href="./confluence-lab.html">Confluence boost</a>
       <a href="./dd-lab.html">V2 drawdown lab</a>
       <a class="here" href="./funded-lab.html">Funded prop lab</a>
+      <a href="./ftmo-lab.html">FTMO Challenge lab</a>
     </nav>
 
     <h1>Funded prop lab</h1>
@@ -273,6 +274,7 @@
 
       const pb = data.playbook || {};
       const risk = pb.risk_box_ftmo_shaped || {};
+      const futuresAlt = firms.find(f => f.id === pb.futures_alternate) || {};
       document.getElementById("playbook").innerHTML = `
         <div class="box">
           <h3>Recommended path</h3>
@@ -280,6 +282,13 @@
           <p><strong style="color:var(--ink)">Signal:</strong> ${pb.signal || "—"}</p>
           <p>${pb.objective || ""}</p>
           <p class="meta">Why: static floor + no consistency trap + mature EA/cTrader automation for CFD products closest to our residual-mom research.</p>
+        </div>
+        <div class="box">
+          <h3>Futures alternate — Tradeify Select Flex</h3>
+          <p><strong style="color:var(--ink)">Firm:</strong> ${futuresAlt.name || "Tradeify"} · score ${futuresAlt.total_score ?? "—"}</p>
+          <p>${pb.futures_path || ""}</p>
+          <p class="meta">${futuresAlt.fit_for_us || ""}</p>
+          <p class="meta"><strong style="color:var(--b)">Watch:</strong> ${futuresAlt.watchouts || ""}</p>
         </div>
         <div class="box">
           <h3>Agent risk box (FTMO-shaped)</h3>

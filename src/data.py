@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -14,12 +15,17 @@ YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 UA = "Mozilla/5.0 (compatible; ai-agent-bakeoff/0.1; +https://github.com/cyrusw17/myWorkflow)"
 
 
-def fetch_ohlc(ticker: str, start: str = "2018-01-01") -> pd.DataFrame:
+def cache_key(ticker: str) -> str:
+    """Filesystem-safe cache stem for Yahoo symbols like EURUSD=X / BTC-USD / ^GSPC."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", ticker.upper())
+
+
+def fetch_ohlc(ticker: str, start: str = "2018-01-01", *, refresh: bool = False) -> pd.DataFrame:
     """Daily OHLC from Yahoo chart API with local CSV cache."""
-    cache_path = CACHE / f"{ticker.upper()}_ohlc.csv"
+    cache_path = CACHE / f"{cache_key(ticker)}_ohlc.csv"
     start_ts = pd.Timestamp(start)
 
-    if cache_path.exists():
+    if cache_path.exists() and not refresh:
         df = pd.read_csv(cache_path, parse_dates=["Date"])
     else:
         params = {
@@ -29,7 +35,7 @@ def fetch_ohlc(ticker: str, start: str = "2018-01-01") -> pd.DataFrame:
             "events": "history",
         }
         r = requests.get(
-            YAHOO.format(symbol=ticker.upper()),
+            YAHOO.format(symbol=ticker),
             params=params,
             timeout=30,
             headers={"User-Agent": UA},
@@ -63,14 +69,20 @@ def fetch_ohlc(ticker: str, start: str = "2018-01-01") -> pd.DataFrame:
     return df.astype(float)
 
 
-def fetch_daily(ticker: str, start: str = "2018-01-01") -> pd.Series:
-    close = fetch_ohlc(ticker, start=start)["Close"]
+def fetch_daily(ticker: str, start: str = "2018-01-01", *, refresh: bool = False) -> pd.Series:
+    close = fetch_ohlc(ticker, start=start, refresh=refresh)["Close"]
     close.name = ticker.upper()
     return close
 
 
-def load_universe(tickers: list[str], start: str = "2018-01-01") -> pd.DataFrame:
-    series = [fetch_daily(t, start=start) for t in tickers]
+def load_universe(
+    tickers: list[str],
+    start: str = "2018-01-01",
+    *,
+    refresh: bool = False,
+    ffill_limit: int = 3,
+) -> pd.DataFrame:
+    series = [fetch_daily(t, start=start, refresh=refresh) for t in tickers]
     prices = pd.concat(series, axis=1).sort_index()
-    prices = prices.ffill(limit=3).dropna(how="any")
+    prices = prices.ffill(limit=ffill_limit).dropna(how="any")
     return prices
