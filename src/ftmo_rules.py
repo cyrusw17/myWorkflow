@@ -670,14 +670,23 @@ def find_first_full_pass_start(
     rules: FtmoRules | None = None,
     min_remaining: int = 80,
 ) -> int:
-    """First start index that clears P1+P2 (falls back to 0)."""
+    """Start index of the *fastest* full P1+P2 clear (falls back to 0)."""
     rules = rules or FtmoRules()
     n = len(rets)
+    best_i = 0
+    best_days = None
     for i in range(0, max(0, n - min_remaining), step):
         shot = simulate_challenge(rets, i, rules)
-        if shot.status == "full_pass":
-            return i
-    return 0
+        if shot.status != "full_pass":
+            continue
+        days = shot.phase1.days + (shot.phase2.days if shot.phase2 else 0)
+        if best_days is None or days < best_days:
+            best_days = days
+            best_i = i
+            # Early exit if we already have a very fast pass (~6 weeks)
+            if days <= 30:
+                break
+    return best_i
 
 
 def summarize_attempts(attempts: list[ChallengeResult]) -> dict:
