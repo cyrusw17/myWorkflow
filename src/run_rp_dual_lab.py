@@ -33,14 +33,60 @@ RULES = FtmoRules()
 ATTEMPT_STEP = 5
 
 
-def _curve(rets: pd.Series, step: int = 2) -> list[dict]:
+def find_daily_kills(
+    rets: pd.Series,
+    daily_loss: float = 0.05,
+    initial: float = 1.0,
+) -> list[dict]:
+    """
+    Days where closed equity breaches FTMO daily loss:
+    equity < day_start_balance − (daily_loss × initial).
+    """
+    r = rets.fillna(0.0)
+    eq = float(initial)
+    out: list[dict] = []
+    limit = daily_loss * initial
+    for dt, ret in r.items():
+        day_start = eq
+        eq = day_start * (1.0 + float(ret))
+        day_pnl = eq - day_start
+        if eq < day_start - limit - 1e-12:
+            out.append({
+                "date": pd.Timestamp(dt).strftime("%Y-%m-%d"),
+                "equity": round(float(eq), 6),
+                "day_start": round(float(day_start), 6),
+                "day_pnl": round(float(day_pnl), 6),
+                "day_return": round(float(ret), 6),
+            })
+    return out
+
+
+def _curve(
+    rets: pd.Series,
+    step: int = 2,
+    *,
+    kill_days: list[dict] | None = None,
+) -> list[dict]:
+    """Equity curve; always retains FTMO daily-loss kill days when downsampling."""
     eq = equity_from_returns(rets.fillna(0.0))
+    kill_dates = {k["date"] for k in (kill_days or [])}
     if step > 1 and len(eq) > step * 2:
-        idxs = list(range(0, len(eq), step))
-        if idxs[-1] != len(eq) - 1:
-            idxs.append(len(eq) - 1)
+        keep = set(range(0, len(eq), step))
+        keep.add(len(eq) - 1)
+        for i, dt in enumerate(eq.index):
+            if pd.Timestamp(dt).strftime("%Y-%m-%d") in kill_dates:
+                keep.add(i)
+        idxs = sorted(keep)
         eq = eq.iloc[idxs]
-    return [{"date": dt.strftime("%Y-%m-%d"), "equity": round(float(v), 6)} for dt, v in eq.items()]
+    rows = []
+    for dt, val in eq.items():
+        d = pd.Timestamp(dt).strftime("%Y-%m-%d")
+        rows.append({
+            "date": d,
+            "equity": round(float(val), 6),
+            "daily_kill": d in kill_dates,
+        })
+    return rows
 
 
 def _slice(rets: pd.Series, end: pd.Timestamp, days: int | None) -> pd.Series:
@@ -105,6 +151,7 @@ def run() -> dict:
             }
         sc = score_row(full["challenge"], full["metrics"])
         daily = rets.fillna(0.0)
+        kills = find_daily_kills(daily, RULES.daily_loss)
         worst_day = float(daily.min()) if len(daily) else 0.0
         eq = equity_from_returns(daily)
         min_eq = float(eq.min()) if len(eq) else 1.0
@@ -132,12 +179,15 @@ def run() -> dict:
                 "max_headroom": min_eq - (1.0 - RULES.max_loss),
                 "cleared_daily": worst_day > -RULES.daily_loss,
                 "cleared_max": min_eq > (1.0 - RULES.max_loss),
+                "daily_kill_count": len(kills),
+                "daily_kills": kills,
             },
             "curve_key": spec.id,
         }
         rows.append(row)
-        curves[spec.id] = _curve(rets, step=3)
-        curves_6m[spec.id] = _curve(_slice(rets, end, 183), step=1)
+        curves[spec.id] = _curve(rets, step=3, kill_days=kills)
+        kills_6m = [k for k in kills if k["date"] >= (end - pd.Timedelta(days=183)).strftime("%Y-%m-%d")]
+        curves_6m[spec.id] = _curve(_slice(rets, end, 183), step=1, kill_days=kills_6m)
         c = full["challenge"]
         print(
             f"    score={sc:.3f} pass={c['full_pass_rate']:.1%} fail={c['fail_rate']:.1%} "
@@ -170,14 +220,19 @@ def run() -> dict:
             "strategy_ids": [m["id"] for m in members],
         })
 
-    # Baseline focus curves with floor
+    # Baseline focus curves with floor + kill markers
     base_rets = build_rp_dual_family(prices, FAMILY_SPECS[0])[0].reindex(prices.index).fillna(0.0)
-    focus = {
-        "2Y": _curve(base_rets, step=3),
-        "6M": _curve(_slice(base_rets, end, 183), step=1),
-        "3M": _curve(_slice(base_rets, end, 92), step=1),
-        "1M": _curve(_slice(base_rets, end, 31), step=1),
-    }
+    base_kills = find_daily_kills(base_rets, RULES.daily_loss)
+    focus = {}
+    for key, days in [("2Y", None), ("6M", 183), ("3M", 92), ("1M", 31)]:
+        sliced = _slice(base_rets, end, days)
+        start_d = sliced.index[0].strftime("%Y-%m-%d") if len(sliced) else ""
+        k = [x for x in base_kills if x["date"] >= start_d]
+        focus[key] = {
+            "curve": _curve(sliced, step=1 if days and days <= 183 else 3, kill_days=k),
+            "daily_kills": k,
+            "daily_kill_count": len(k),
+        }
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

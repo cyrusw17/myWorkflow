@@ -113,7 +113,7 @@
 
     <section class="panel">
       <h2>Compare to baseline</h2>
-      <p class="hint">Pick a group, then overlay members vs baseline equity. Red dashed = 10% max-loss floor (0.90).</p>
+      <p class="hint">Pick a group, then overlay members vs baseline equity. Red dashed = 10% max-loss floor (0.90). <strong style="color:var(--bad)">Red ×</strong> = day that would breach the <strong>5% daily loss</strong> kill rule.</p>
       <div class="tabs" id="groupTabs"></div>
       <div class="tabs" id="horizonTabs"></div>
       <div class="chart-box"><canvas id="overlayChart"></canvas></div>
@@ -205,6 +205,7 @@
             <td class="num">${pct(m.cagr)}</td>
             <td class="num">${pct(m.max_dd)}</td>
             <td class="num ${r.cleared_daily ? "up" : "down"}">${pct(r.worst_day)}</td>
+            <td class="num ${(r.daily_kill_count || 0) > 0 ? "down" : "up"}"><strong>${r.daily_kill_count ?? 0}</strong></td>
             <td class="num ${r.cleared_max ? "up" : "down"}">${num(r.min_equity, 3)}</td>
             <td class="num">${pct(s.windows?.["6M"]?.metrics?.total_return)}</td>
           </tr>`;
@@ -221,7 +222,7 @@
                   <th>#</th><th>Strategy</th><th>Global</th><th>Score</th>
                   <th>Pass</th><th>Fail</th><th>D/M</th>
                   <th>Sharpe</th><th>CAGR</th><th>MaxDD</th>
-                  <th>Worst day</th><th>Min eq</th><th>6M ret</th>
+                  <th>Worst day</th><th>5% kills</th><th>Min eq</th><th>6M ret</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
@@ -236,13 +237,28 @@
       const groupTabs = document.getElementById("groupTabs");
       const horizonTabs = document.getElementById("horizonTabs");
 
+      const killMarkerDataset = (curve, label = "5% daily-loss KILL") => ({
+        label,
+        data: (curve || []).map((p) => (p.daily_kill ? p.equity : null)),
+        borderColor: "#f07178",
+        backgroundColor: "#f07178",
+        pointRadius: (curve || []).map((p) => (p.daily_kill ? 6 : 0)),
+        pointHoverRadius: 7,
+        pointStyle: "crossRot",
+        pointBorderWidth: 2,
+        showLine: false,
+        order: 0,
+      });
+
       const drawOverlay = () => {
         [...groupTabs.querySelectorAll("button")].forEach((b) => b.classList.toggle("on", b.dataset.g === activeGroup));
         [...horizonTabs.querySelectorAll("button")].forEach((b) => b.classList.toggle("on", b.dataset.h === horizon));
         const g = groups.find((x) => x.id === activeGroup) || groups[0];
         const ids = (g?.strategy_ids || []).slice(0, 8);
         const curveMap = horizon === "6M" ? data.curves_6m : data.curves;
-        const baseCurve = curveMap[ids[0]] || curveMap[baselineId] || [];
+        // Prefer baseline curve for shared x-axis when present in group
+        const axisId = ids.includes(baselineId) ? baselineId : ids[0];
+        const baseCurve = curveMap[axisId] || curveMap[baselineId] || [];
         const existing = charts.find((c) => c.canvas?.id === "overlayChart");
         if (existing) { existing.destroy(); charts.splice(charts.indexOf(existing), 1); }
         const datasets = ids.map((id, i) => ({
@@ -252,6 +268,7 @@
           tension: 0.05,
           pointRadius: 0,
           borderWidth: id === baselineId ? 2.4 : 1.5,
+          order: 2,
         }));
         if (baseCurve.length) {
           datasets.push({
@@ -262,16 +279,49 @@
             pointRadius: 0,
             borderWidth: 1.8,
             tension: 0,
+            order: 3,
           });
         }
+        // Mark kills for each visible strategy on its own path (aligned by date to axis curve)
+        const axisDates = baseCurve.map((p) => p.date);
+        ids.forEach((id, i) => {
+          const kills = byId[id]?.risk?.daily_kills || [];
+          if (!kills.length) return;
+          const killMap = Object.fromEntries(kills.map((k) => [k.date, k.equity]));
+          const pts = axisDates.map((d) => (killMap[d] != null ? killMap[d] : null));
+          // Also plot kills that exist on this strategy's own curve dates
+          const own = curveMap[id] || [];
+          const ownKill = own.map((p) => (p.daily_kill ? p.equity : null));
+          datasets.push({
+            label: `${byId[id]?.name || id} · 5% daily KILL`,
+            data: own.length === axisDates.length ? ownKill : pts,
+            borderColor: COLORS[i % COLORS.length],
+            backgroundColor: "#f07178",
+            pointRadius: (own.length === axisDates.length ? own : axisDates).map((p, idx) => {
+              const v = own.length === axisDates.length ? ownKill[idx] : pts[idx];
+              return v == null ? 0 : 6;
+            }),
+            pointStyle: "crossRot",
+            pointBorderWidth: 2,
+            pointBorderColor: "#f07178",
+            showLine: false,
+            order: 0,
+          });
+        });
+        const killCount = ids.reduce((n, id) => n + (byId[id]?.risk?.daily_kill_count || 0), 0);
         charts.push(new Chart(document.getElementById("overlayChart"), {
           type: "line",
-          data: { labels: baseCurve.map((p) => p.date), datasets },
+          data: { labels: axisDates, datasets },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              title: { display: true, text: `${g?.label || ""} · ${horizon}`, color: "#8aa397", font: { size: 12 } },
+              title: {
+                display: true,
+                text: `${g?.label || ""} · ${horizon} · ${killCount} daily-loss kill day(s) marked`,
+                color: "#8aa397",
+                font: { size: 12 },
+              },
               legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 10 } } },
             },
             scales: {
@@ -308,7 +358,9 @@
       const focusTabs = document.getElementById("focusTabs");
       const drawFocus = (key) => {
         [...focusTabs.querySelectorAll("button")].forEach((b) => b.classList.toggle("on", b.dataset.k === key));
-        const series = focus[key] || [];
+        const pack = focus[key] || {};
+        const series = Array.isArray(pack) ? pack : (pack.curve || []);
+        const kills = Array.isArray(pack) ? [] : (pack.daily_kills || []);
         const existing = charts.find((c) => c.canvas?.id === "focusChart");
         if (existing) { existing.destroy(); charts.splice(charts.indexOf(existing), 1); }
         charts.push(new Chart(document.getElementById("focusChart"), {
@@ -316,13 +368,24 @@
           data: {
             labels: series.map((p) => p.date),
             datasets: [
-              { label: `${baseline?.name || "Baseline"} · ${key}`, data: series.map((p) => p.equity), borderColor: "#3dd6c6", pointRadius: 0, borderWidth: 2, tension: 0.05 },
-              { label: "10% floor", data: series.map(() => rules.max_loss_floor ?? 0.9), borderColor: "#f07178", borderDash: [6, 4], pointRadius: 0, borderWidth: 1.8, tension: 0 },
+              { label: `${baseline?.name || "Baseline"} · ${key}`, data: series.map((p) => p.equity), borderColor: "#3dd6c6", pointRadius: 0, borderWidth: 2, tension: 0.05, order: 2 },
+              { label: "10% floor", data: series.map(() => rules.max_loss_floor ?? 0.9), borderColor: "#f07178", borderDash: [6, 4], pointRadius: 0, borderWidth: 1.8, tension: 0, order: 3 },
+              killMarkerDataset(series, `5% daily-loss KILL (${kills.length})`),
             ],
           },
           options: {
             responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { labels: { color: "#8aa397" } } },
+            plugins: {
+              title: {
+                display: true,
+                text: kills.length
+                  ? `${kills.length} day(s) would have killed the account on the 5% daily-loss rule`
+                  : "No 5% daily-loss kill days in this window",
+                color: kills.length ? "#f07178" : "#8aa397",
+                font: { size: 12 },
+              },
+              legend: { labels: { color: "#8aa397" } },
+            },
             scales: {
               x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
               y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },

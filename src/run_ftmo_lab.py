@@ -45,14 +45,31 @@ PAYOUT = PayoutPolicy(every_n_days=10, min_profit=0.01, keep_buffer=0.005, trade
 FUNDED_STEP = 10
 
 
-def _curve(rets: pd.Series, step: int = 1) -> list[dict]:
-    eq = equity_from_returns(rets.fillna(0.0))
+def _curve(rets: pd.Series, step: int = 1, *, daily_loss: float = 0.05) -> list[dict]:
+    r = rets.fillna(0.0)
+    eq = equity_from_returns(r)
+    kills = set()
+    e = 1.0
+    for dt, ret in r.items():
+        day_start = e
+        e = day_start * (1.0 + float(ret))
+        if e < day_start - daily_loss - 1e-12:
+            kills.add(pd.Timestamp(dt).strftime("%Y-%m-%d"))
     if step > 1 and len(eq) > step * 2:
-        idxs = list(range(0, len(eq), step))
-        if idxs[-1] != len(eq) - 1:
-            idxs.append(len(eq) - 1)
-        eq = eq.iloc[idxs]
-    return [{"date": dt.strftime("%Y-%m-%d"), "equity": round(float(v), 6)} for dt, v in eq.items()]
+        keep = set(range(0, len(eq), step))
+        keep.add(len(eq) - 1)
+        for i, dt in enumerate(eq.index):
+            if pd.Timestamp(dt).strftime("%Y-%m-%d") in kills:
+                keep.add(i)
+        eq = eq.iloc[sorted(keep)]
+    return [
+        {
+            "date": dt.strftime("%Y-%m-%d"),
+            "equity": round(float(val), 6),
+            "daily_kill": dt.strftime("%Y-%m-%d") in kills,
+        }
+        for dt, val in eq.items()
+    ]
 
 
 def _slice_rets(rets: pd.Series, end: pd.Timestamp, calendar_days: int | None) -> pd.Series:
@@ -277,20 +294,38 @@ def build_risk_visuals(rets: pd.Series, strategies: list[dict], rules: FtmoRules
     max_floor = 1.0 - rules.max_loss
     max_headroom = min_eq - max_floor
 
-    # Dense path for charting (6M emphasis + 2Y)
+    # Dense path for charting (6M emphasis + 2Y) — keep every 5% daily-loss kill day
     def path_pack(series: pd.Series, step: int = 1) -> dict:
         s = series.fillna(0.0)
         e = equity_from_returns(s)
+        kills = []
+        eq_run = 1.0
+        for dt, ret in s.items():
+            day_start = eq_run
+            eq_run = day_start * (1.0 + float(ret))
+            if eq_run < day_start - rules.daily_loss - 1e-12:
+                kills.append(pd.Timestamp(dt).strftime("%Y-%m-%d"))
+        kill_set = set(kills)
         if step > 1 and len(e) > step * 2:
-            idxs = list(range(0, len(e), step))
-            if idxs[-1] != len(e) - 1:
-                idxs.append(len(e) - 1)
+            keep = set(range(0, len(e), step))
+            keep.add(len(e) - 1)
+            for i, dt in enumerate(e.index):
+                if pd.Timestamp(dt).strftime("%Y-%m-%d") in kill_set:
+                    keep.add(i)
+            idxs = sorted(keep)
             e = e.iloc[idxs]
             s = s.reindex(e.index).fillna(0.0)
+        dates = [dt.strftime("%Y-%m-%d") for dt in e.index]
         return {
-            "dates": [dt.strftime("%Y-%m-%d") for dt in e.index],
+            "dates": dates,
             "equity": [round(float(v), 6) for v in e.values],
             "daily": [round(float(v), 6) for v in s.values],
+            "daily_kill": [d in kill_set for d in dates],
+            "daily_kills": [
+                {"date": d, "equity": round(float(e.loc[pd.Timestamp(d)]), 6)}
+                for d in dates if d in kill_set
+            ],
+            "daily_kill_count": int(sum(1 for d in dates if d in kill_set)),
             "max_loss_floor": [round(max_floor, 6)] * len(e),
             "daily_loss_limit": [-rules.daily_loss] * len(e),
             "daily_gain_ref": [rules.daily_loss] * len(e),
@@ -483,10 +518,10 @@ def run() -> dict:
     # Winner recent window curves for UI
     winner_rets = STRATEGY_BUILDERS[winner["id"]](prices).reindex(prices.index).fillna(0.0)
     focus_curves = {
-        "2Y": _curve(winner_rets, step=3),
-        "6M": _curve(_slice_rets(winner_rets, end, 183), step=1),
-        "3M": _curve(_slice_rets(winner_rets, end, 92), step=1),
-        "1M": _curve(_slice_rets(winner_rets, end, 31), step=1),
+        "2Y": _curve(winner_rets, step=3, daily_loss=RULES.daily_loss),
+        "6M": _curve(_slice_rets(winner_rets, end, 183), step=1, daily_loss=RULES.daily_loss),
+        "3M": _curve(_slice_rets(winner_rets, end, 92), step=1, daily_loss=RULES.daily_loss),
+        "1M": _curve(_slice_rets(winner_rets, end, 31), step=1, daily_loss=RULES.daily_loss),
     }
     risk_visuals = build_risk_visuals(winner_rets, rows, RULES)
 
