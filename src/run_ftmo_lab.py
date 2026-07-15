@@ -1,12 +1,11 @@
 """
-FTMO Challenge lab — multi-strategy bakeoff under 2-Step rules.
+Prop-account lab — multi-strategy bakeoff under dollar account rules.
+
+Account model (user):
+  $25,000 start · $1,250 fixed daily loss · $5,000 max loss from start
+  Withdraw ALL day profit every day (cushion does not rebuild from wins)
 
 Outputs site/data/ftmo_lab.json for site/ftmo-lab.html.
-
-Focus:
-  1) Pass challenge with least failure likelihood
-  2) Consistent gains after / during the path
-  Windows: 2Y full + emphasis on trailing 6M / 3M / 1M
 """
 
 from __future__ import annotations
@@ -22,14 +21,16 @@ from src.data import load_universe
 from src.ftmo_rules import (
     FtmoRules,
     PayoutPolicy,
+    dollars,
     rolling_challenges,
     rolling_funded,
     summarize_attempts,
     summarize_funded,
     simulate_challenge,
+    walk_daily_withdraw,
 )
 from src.ftmo_strategies import FTMO_TICKERS, STRATEGY_BUILDERS, STRATEGY_META
-from src.metrics import equity_from_returns, summarize
+from src.metrics import summarize
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE_DATA = ROOT / "site" / "data"
@@ -39,34 +40,37 @@ OUT = SITE_DATA / "ftmo_lab.json"
 START = "2023-07-01"
 RULES = FtmoRules()
 ATTEMPT_STEP = 5
-# Assumed living policy once funded: pay yourself out often so a breach
-# only burns unpaid open profit, not a tall stacked PnL tower.
-PAYOUT = PayoutPolicy(every_n_days=10, min_profit=0.01, keep_buffer=0.005, trader_split=0.80, max_days=252)
+# Living policy: withdraw all day profit every closed day.
+PAYOUT = PayoutPolicy(
+    every_n_days=1,
+    min_profit=0.0,
+    keep_buffer=0.0,
+    trader_split=0.80,
+    max_days=252,
+    mode="day_pnl",
+)
 FUNDED_STEP = 10
 
 
-def _curve(rets: pd.Series, step: int = 1, *, daily_loss: float = 0.05) -> list[dict]:
+def _curve(rets: pd.Series, step: int = 1, *, daily_loss: float | None = None) -> list[dict]:
+    """Equity under daily profit-withdraw; marks kill days ($1,250 daily or $5k max)."""
+    del daily_loss  # limits come from RULES
     r = rets.fillna(0.0)
-    eq = equity_from_returns(r)
-    kills = set()
-    e = 1.0
-    for dt, ret in r.items():
-        day_start = e
-        e = day_start * (1.0 + float(ret))
-        if e < day_start - daily_loss - 1e-12:
-            kills.add(pd.Timestamp(dt).strftime("%Y-%m-%d"))
+    eq, kills, _ = walk_daily_withdraw(r, RULES)
+    kill_set = {k["date"] for k in kills}
     if step > 1 and len(eq) > step * 2:
         keep = set(range(0, len(eq), step))
         keep.add(len(eq) - 1)
         for i, dt in enumerate(eq.index):
-            if pd.Timestamp(dt).strftime("%Y-%m-%d") in kills:
+            if pd.Timestamp(dt).strftime("%Y-%m-%d") in kill_set:
                 keep.add(i)
         eq = eq.iloc[sorted(keep)]
     return [
         {
             "date": dt.strftime("%Y-%m-%d"),
             "equity": round(float(val), 6),
-            "daily_kill": dt.strftime("%Y-%m-%d") in kills,
+            "equity_dollars": round(dollars(val, RULES), 2),
+            "daily_kill": dt.strftime("%Y-%m-%d") in kill_set,
         }
         for dt, val in eq.items()
     ]
@@ -111,7 +115,7 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
     r_sharpe = float(np.mean([recent[w]["metrics"]["sharpe"] for w in ("6M", "3M", "1M")]))
     r_ret = float(np.mean([recent[w]["metrics"]["total_return"] for w in ("6M", "3M", "1M")]))
 
-    continuous_ok = mdd <= 0.12
+    continuous_ok = mdd <= RULES.max_loss + 0.02
 
     fund_breach = float(funded.get("breach_rate") or 0.0)
     locked = float(funded.get("avg_locked_trader") or 0.0)
@@ -251,20 +255,10 @@ def evaluate_window(rets: pd.Series, label: str) -> dict:
         "phase2": _phase_result_dict(shot.phase2),
     }
 
-    eq = 1.0
-    floor = 1.0 - rules.max_loss
-    daily_hits = 0
-    max_hit = False
-    min_eq = 1.0
-    for r in rets.fillna(0.0):
-        day_start = eq
-        eq *= 1.0 + float(r)
-        min_eq = min(min_eq, eq)
-        if eq < day_start - rules.daily_loss:
-            daily_hits += 1
-        if eq < floor:
-            max_hit = True
-            break
+    eq, kills, _ = walk_daily_withdraw(rets.fillna(0.0), rules)
+    daily_hits = sum(1 for k in kills if k.get("daily_kill"))
+    max_hit = any(k.get("max_kill") for k in kills)
+    min_eq = float(eq.min()) if len(eq) else 1.0
 
     return {
         "chal": chal,
@@ -276,36 +270,30 @@ def evaluate_window(rets: pd.Series, label: str) -> dict:
             "daily_loss_events": daily_hits,
             "max_loss_breach": max_hit,
             "min_equity": round(float(min_eq), 6),
+            "min_equity_dollars": round(dollars(min_eq, rules), 2),
         },
     }
 
 
 
 def build_risk_visuals(rets: pd.Series, strategies: list[dict], rules: FtmoRules) -> dict:
-    """Packaged visuals for the 5% daily / 10% max-loss envelope on Pages."""
+    """Dollar-limit envelope: $1,250 daily / $5k max, daily profit withdraw."""
     r = rets.fillna(0.0)
-    eq = equity_from_returns(r)
+    eq, kills_all, locked = walk_daily_withdraw(r, rules)
     daily = r.astype(float)
     worst_day = float(daily.min()) if len(daily) else 0.0
     best_day = float(daily.max()) if len(daily) else 0.0
-    # Headroom to daily limit using closed-day PnL (proxy)
-    daily_headroom = rules.daily_loss + worst_day  # positive = still under limit
+    worst_day_dollars = worst_day * rules.initial_balance
+    daily_headroom = rules.daily_loss + worst_day
     min_eq = float(eq.min()) if len(eq) else 1.0
-    max_floor = 1.0 - rules.max_loss
+    max_floor = rules.max_loss_floor
     max_headroom = min_eq - max_floor
+    daily_kill_dates = {k["date"] for k in kills_all}
 
-    # Dense path for charting (6M emphasis + 2Y) — keep every 5% daily-loss kill day
     def path_pack(series: pd.Series, step: int = 1) -> dict:
         s = series.fillna(0.0)
-        e = equity_from_returns(s)
-        kills = []
-        eq_run = 1.0
-        for dt, ret in s.items():
-            day_start = eq_run
-            eq_run = day_start * (1.0 + float(ret))
-            if eq_run < day_start - rules.daily_loss - 1e-12:
-                kills.append(pd.Timestamp(dt).strftime("%Y-%m-%d"))
-        kill_set = set(kills)
+        e, kills, _ = walk_daily_withdraw(s, rules)
+        kill_set = {k["date"] for k in kills}
         if step > 1 and len(e) > step * 2:
             keep = set(range(0, len(e), step))
             keep.add(len(e) - 1)
@@ -319,16 +307,26 @@ def build_risk_visuals(rets: pd.Series, strategies: list[dict], rules: FtmoRules
         return {
             "dates": dates,
             "equity": [round(float(v), 6) for v in e.values],
+            "equity_dollars": [round(dollars(v, rules), 2) for v in e.values],
             "daily": [round(float(v), 6) for v in s.values],
+            "daily_dollars": [round(float(v) * rules.initial_balance, 2) for v in s.values],
             "daily_kill": [d in kill_set for d in dates],
             "daily_kills": [
-                {"date": d, "equity": round(float(e.loc[pd.Timestamp(d)]), 6)}
-                for d in dates if d in kill_set
+                {
+                    "date": d,
+                    "equity": round(float(e.loc[pd.Timestamp(d)]), 6),
+                    "equity_dollars": round(dollars(float(e.loc[pd.Timestamp(d)]), rules), 2),
+                }
+                for d in dates
+                if d in kill_set
             ],
             "daily_kill_count": int(sum(1 for d in dates if d in kill_set)),
             "max_loss_floor": [round(max_floor, 6)] * len(e),
+            "max_loss_floor_dollars": [round(rules.max_loss_floor_dollars, 2)] * len(e),
             "daily_loss_limit": [-rules.daily_loss] * len(e),
+            "daily_loss_limit_dollars": [-rules.daily_loss_dollars] * len(e),
             "daily_gain_ref": [rules.daily_loss] * len(e),
+            "daily_gain_ref_dollars": [rules.daily_loss_dollars] * len(e),
         }
 
     end = r.index[-1]
@@ -353,35 +351,55 @@ def build_risk_visuals(rets: pd.Series, strategies: list[dict], rules: FtmoRules
         })
 
     # Histogram of daily returns for winner (bins)
-    bins = np.linspace(-0.06, 0.06, 25)
-    hist, edges = np.histogram(daily.clip(-0.06, 0.06), bins=bins)
+    bins = np.linspace(-0.08, 0.08, 25)
+    hist, edges = np.histogram(daily.clip(-0.08, 0.08), bins=bins)
     hist_pack = {
         "centers": [round(float((edges[i] + edges[i + 1]) / 2), 5) for i in range(len(hist))],
+        "centers_dollars": [
+            round(float((edges[i] + edges[i + 1]) / 2) * rules.initial_balance, 2)
+            for i in range(len(hist))
+        ],
         "counts": [int(x) for x in hist],
         "daily_limit": -rules.daily_loss,
+        "daily_limit_dollars": -rules.daily_loss_dollars,
     }
 
     return {
         "limits": {
+            "initial_balance": rules.initial_balance,
             "daily_loss": rules.daily_loss,
+            "daily_loss_dollars": rules.daily_loss_dollars,
             "max_loss": rules.max_loss,
+            "max_loss_dollars": rules.max_loss_dollars,
             "max_loss_floor": max_floor,
+            "max_loss_floor_dollars": rules.max_loss_floor_dollars,
             "phase1_target": rules.phase1_target,
             "phase2_target": rules.phase2_target,
+            "withdraw_profits_daily": True,
         },
         "winner_envelope": {
             "worst_day": worst_day,
+            "worst_day_dollars": round(worst_day_dollars, 2),
             "best_day": best_day,
+            "best_day_dollars": round(best_day * rules.initial_balance, 2),
             "daily_headroom": daily_headroom,
+            "daily_headroom_dollars": round(rules.daily_loss_dollars + worst_day_dollars, 2),
             "min_equity": min_eq,
+            "min_equity_dollars": round(dollars(min_eq, rules), 2),
             "max_headroom": max_headroom,
-            "max_dd": float(eq.iloc[-1] / eq.cummax().iloc[-1] - 1) if len(eq) else 0.0,  # unused; real max_dd below
+            "max_headroom_dollars": round(dollars(max_headroom, rules), 2),
             "path_max_dd": float((eq / eq.cummax() - 1.0).min()) if len(eq) else 0.0,
+            "locked_profit_dollars": round(dollars(locked, rules), 2),
+            "daily_kill_count": len(daily_kill_dates),
             "pct_days_worse_than_2pct": float((daily <= -0.02).mean()) if len(daily) else 0.0,
             "pct_days_worse_than_3pct": float((daily <= -0.03).mean()) if len(daily) else 0.0,
-            "days_within_1pct_of_daily_limit": int(((daily <= -0.04) & (daily > -0.05)).sum()),
-            "days_at_or_over_daily_limit": int((daily <= -rules.daily_loss).sum()),
-            "cleared_daily_limit": bool(worst_day > -rules.daily_loss + 1e-12),
+            "days_within_1pct_of_daily_limit": int(
+                ((daily * rules.initial_balance <= -1000) & (daily * rules.initial_balance > -1250)).sum()
+            ),
+            "days_at_or_over_daily_limit": int(
+                (daily * rules.initial_balance <= -rules.daily_loss_dollars).sum()
+            ),
+            "cleared_daily_limit": bool(worst_day_dollars > -rules.daily_loss_dollars + 1e-9),
             "cleared_max_floor": bool(min_eq > max_floor + 1e-12),
         },
         "winner_path_2y": path_pack(r, step=3),
@@ -528,26 +546,35 @@ def run() -> dict:
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "disclaimer": (
-            "Research approximation using Yahoo daily proxies for FTMO CFDs (FX, indices, metals, crypto, stocks). "
-            "Not identical to FTMO fills, swaps, commissions, or intraday equity marks. "
-            "Verify current FTMO Trading Objectives before any challenge purchase."
+            f"Research model: ${RULES.initial_balance:,.0f} account, fixed "
+            f"${RULES.daily_loss_dollars:,.0f} daily loss, "
+            f"${RULES.max_loss_dollars:,.0f} max loss from start "
+            f"(floor ${RULES.max_loss_floor_dollars:,.0f}), withdraw ALL day profit every day. "
+            "Yahoo daily proxies ≠ live fills/swaps/intraday marks."
         ),
         "rules": {
-            "program": "FTMO Challenge 2-Step (classic)",
+            "program": "$25k prop account · fixed-dollar DLL + static max loss",
+            "initial_balance": RULES.initial_balance,
+            "daily_loss_dollars": RULES.daily_loss_dollars,
+            "max_loss_dollars": RULES.max_loss_dollars,
+            "max_loss_floor_dollars": RULES.max_loss_floor_dollars,
             "phase1_target": RULES.phase1_target,
             "phase2_target": RULES.phase2_target,
             "daily_loss": RULES.daily_loss,
             "max_loss_static": RULES.max_loss,
+            "max_loss_floor": RULES.max_loss_floor,
+            "withdraw_profits_daily": True,
             "min_trading_days": RULES.min_trading_days,
             "sim_max_days_phase1": RULES.max_days_phase1,
             "sim_max_days_phase2": RULES.max_days_phase2,
             "attempt_step_days": ATTEMPT_STEP,
             "notes": [
-                "Each rolling start is an independent Challenge → Verification attempt.",
-                "Phase 2 resets to a fresh 1.0 equity Verification account.",
-                "Daily loss uses closed-day PnL vs day-start balance − 5% initial (no intraday path).",
-                "Fail tallies count daily-loss and max-loss breaches; timeouts are separate (not failures).",
-                "Funded sim assumes regular payouts: unpaid open profit is lost on breach; locked withdrawals survive.",
+                f"Daily loss is a fixed ${RULES.daily_loss_dollars:,.0f} from day-start — not a % of current equity.",
+                f"Max loss is ${RULES.max_loss_dollars:,.0f} from the ${RULES.initial_balance:,.0f} start (floor ${RULES.max_loss_floor_dollars:,.0f}).",
+                "Every green day: withdraw 100% of that day's profit; equity only ratchets down on losses.",
+                "Challenge phases still require equity growth (no mid-phase withdraw) so pass rates stay measurable.",
+                "Kill × markers use the funded daily-withdraw path.",
+                "Fail tallies count daily-loss and max-loss breaches; timeouts are separate.",
             ],
         },
         "universe": {
@@ -571,13 +598,14 @@ def run() -> dict:
             "composite": "0.45 survival + 0.25 payout + 0.20 return + 0.10 improvement",
         },
         "payout_policy": {
-            "assumption": "Once funded we fairly consistently pay ourselves out — a breach must not vaporize a tall unpaid stack.",
+            "assumption": "Withdraw ALL day profit every closed day — cushion never rebuilds from wins after a drawdown.",
             "every_n_trading_days": PAYOUT.every_n_days,
             "min_open_profit": PAYOUT.min_profit,
             "keep_buffer": PAYOUT.keep_buffer,
             "trader_split": PAYOUT.trader_split,
+            "mode": PAYOUT.mode,
             "funded_horizon_days": PAYOUT.max_days,
-            "contrast": "Hoard mode never withdraws until end/breach — shows how much unpaid PnL a breach would erase.",
+            "contrast": "Hoard mode never withdraws until end/breach — contrast for unpaid-tower risk.",
         },
         "champions": {
             "overall": {
@@ -629,26 +657,23 @@ def run() -> dict:
         "playbook": {
             "recommended": winner["id"],
             "challenge_ops": [
-                "Trade FTMO Swing if you hold overnight across weekends on FX/indices.",
-                "Keep modeled daily loss well under 5% — our brake soft-stops near 1–2% closed-day loss.",
-                "Do not chase Phase-1 10% with crypto size; use crypto only as a dampened sleeve if at all.",
+                f"Hard stop before −${RULES.daily_loss_dollars:,.0f} day PnL on the ${RULES.initial_balance:,.0f} account.",
+                f"Never let equity pierce ${RULES.max_loss_floor_dollars:,.0f} (max −${RULES.max_loss_dollars:,.0f} from start).",
+                "Challenge phases still need equity in-account to hit +10% / +5% (sim only).",
                 "Min 4 trading days — grind strategies naturally satisfy this; avoid one-shot lottery days.",
-                "After a −1% day, cut exposure (agent brake) rather than revenge-trading.",
-                "Prefer static 2-Step over 1-Step trailing DD for these books.",
+                "After a −$250–400 day, cut exposure rather than revenge-trading into the $1,250 wall.",
             ],
             "payout_ops": [
-                "Once funded: request payouts on a fixed cadence (modeled every ~10 trading days when ≥1% open).",
-                "Never treat unpaid account equity as real money — only locked withdrawals count.",
-                "Leave a thin buffer (~0.5%) after payout so the next day is not sitting on the knife edge.",
-                "Know the tradeoff: withdrawing removes static-DD cushion (floor stays at 90% of initial) — size down after a big paycheck.",
-                "If a week is red, skip the paycheck rather than forcing size to 'make the withdrawal'.",
-                "Hoarding for a big month is how a single daily-loss breach deletes weeks of unpaid work.",
-                "Target many small paychecks over one heroic unpaid run-up.",
+                "Every green day: withdraw 100% of that day's profit — do not rebuild cushion in-account.",
+                "Only locked withdrawals count as real money; unpaid open PnL under this mode is ~same-day only.",
+                f"After a red day, size off the new lower day-start; the ${RULES.daily_loss_dollars:,.0f} DLL stays fixed in dollars.",
+                "Skipping a green-day withdraw reintroduces unpaid-tower risk — don't.",
+                "Track locked dollars withdrawn; that is the real scoreboard under this ops mode.",
             ],
             "improvement_levers": [
-                "Raise vol target slowly (0.5% increments) only while rolling fail rate stays <10% AND funded breach stays near 0.",
-                "Add session filters (skip high-impact USD news windows) before increasing size.",
-                "Walk-forward re-fit lookbacks quarterly; freeze during a live challenge.",
+                "Cut sleeve vol so worst day PnL stays well inside −$1,250.",
+                "Prefer books whose daily-withdraw path never touches the $20k floor.",
+                "Raise vol slowly only while rolling fail rate stays <10% AND funded breach stays near 0.",
             ],
         },
     }

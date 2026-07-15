@@ -104,7 +104,7 @@
     <p class="sub">
       Baseline is the FTMO-lab winner (<strong>RP + Dual-mom blend</strong>).
       Same engine, cut by asset sleeve, market-cap / volatility filters, and increasing trade-count ladders.
-      Hard limits remain <strong>5% daily</strong> and <strong>10% static max loss</strong>.
+      Modeled on <strong>$25k</strong>: fixed <strong>$1,250</strong> daily · <strong>$5k</strong> max from start · withdraw all day profit daily.
     </p>
 
     <div class="grow-box" id="howToAdd"></div>
@@ -113,7 +113,7 @@
 
     <section class="panel">
       <h2>Compare to baseline</h2>
-      <p class="hint">Pick a group, then overlay members vs baseline equity. Red dashed = 10% max-loss floor (0.90). <strong style="color:var(--bad)">Red ×</strong> = day that would breach the <strong>5% daily loss</strong> kill rule.</p>
+      <p class="hint">Pick a group, then overlay members vs baseline. Red dashed = $20k max-loss floor. <strong style="color:var(--bad)">Red ×</strong> = day that would breach the <strong>−$1,250 daily</strong> kill rule.</p>
       <div class="tabs" id="groupTabs"></div>
       <div class="tabs" id="horizonTabs"></div>
       <div class="chart-box"><canvas id="overlayChart"></canvas></div>
@@ -132,7 +132,7 @@
     </section>
 
     <section class="panel">
-      <h2>Risk clearance vs 5% / 10%</h2>
+      <h2>Risk clearance vs $1,250 / $5k</h2>
       <div class="chart-box sm"><canvas id="riskChart"></canvas></div>
     </section>
 
@@ -146,6 +146,7 @@
     const charts = [];
     const pct = (x) => x == null || Number.isNaN(+x) ? "—" : `${(100 * x).toFixed(1)}%`;
     const num = (x, d = 2) => x == null || Number.isNaN(+x) ? "—" : Number(x).toFixed(d);
+    const usd = (x, d = 0) => x == null || Number.isNaN(+x) ? "—" : Number(x).toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: d, minimumFractionDigits: d });
 
     async function main() {
       const res = await fetch(`./data/rp_dual_lab.json?v=${Date.now()}`, { cache: "no-store" });
@@ -170,8 +171,8 @@
         <div class="badge ok"><strong>Baseline</strong> · ${baseline?.name || "—"}</div>
         <div class="badge"><strong>Variants</strong> · ${strat.length}</div>
         <div class="badge"><strong>Best score</strong> · ${winner?.name || "—"} (${num(winner?.score, 3)})</div>
-        <div class="badge warn"><strong>Daily</strong> · ${pct(-(rules.daily_loss || 0.05))}</div>
-        <div class="badge" style="border-color:#6b2d35;color:var(--bad)"><strong>Max</strong> · floor ${pct(rules.max_loss_floor || 0.9)}</div>
+        <div class="badge warn"><strong>Daily</strong> · ${usd(-(rules.daily_loss_dollars || 1250))}</div>
+        <div class="badge" style="border-color:#6b2d35;color:var(--bad)"><strong>Max</strong> · floor ${usd(rules.max_loss_floor_dollars || 20000)}</div>
       `;
 
       // Grouped panels
@@ -204,9 +205,9 @@
             <td class="num">${num(m.sharpe)}</td>
             <td class="num">${pct(m.cagr)}</td>
             <td class="num">${pct(m.max_dd)}</td>
-            <td class="num ${r.cleared_daily ? "up" : "down"}">${pct(r.worst_day)}</td>
+            <td class="num ${r.cleared_daily ? "up" : "down"}">${usd(r.worst_day_dollars ?? r.worst_day * 25000)}</td>
             <td class="num ${(r.daily_kill_count || 0) > 0 ? "down" : "up"}"><strong>${r.daily_kill_count ?? 0}</strong></td>
-            <td class="num ${r.cleared_max ? "up" : "down"}">${num(r.min_equity, 3)}</td>
+            <td class="num ${r.cleared_max ? "up" : "down"}">${usd(r.min_equity_dollars ?? r.min_equity * 25000)}</td>
             <td class="num">${pct(s.windows?.["6M"]?.metrics?.total_return)}</td>
           </tr>`;
         }).join("");
@@ -222,7 +223,7 @@
                   <th>#</th><th>Strategy</th><th>Global</th><th>Score</th>
                   <th>Pass</th><th>Fail</th><th>D/M</th>
                   <th>Sharpe</th><th>CAGR</th><th>MaxDD</th>
-                  <th>Worst day</th><th>5% kills</th><th>Min eq</th><th>6M ret</th>
+                  <th>Worst day $</th><th>$1,250 kills</th><th>Min eq $</th><th>6M ret</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
@@ -237,7 +238,7 @@
       const groupTabs = document.getElementById("groupTabs");
       const horizonTabs = document.getElementById("horizonTabs");
 
-      const killMarkerDataset = (curve, label = "5% daily-loss KILL") => ({
+      const killMarkerDataset = (curve, label = "$1,250 daily KILL") => ({
         label,
         data: (curve || []).map((p) => (p.daily_kill ? p.equity : null)),
         borderColor: "#f07178",
@@ -272,7 +273,7 @@
         }));
         if (baseCurve.length) {
           datasets.push({
-            label: "10% max-loss floor",
+            label: "$20k max-loss floor",
             data: baseCurve.map(() => rules.max_loss_floor ?? 0.9),
             borderColor: "#f07178",
             borderDash: [6, 4],
@@ -293,7 +294,7 @@
           const own = curveMap[id] || [];
           const ownKill = own.map((p) => (p.daily_kill ? p.equity : null));
           datasets.push({
-            label: `${byId[id]?.name || id} · 5% daily KILL`,
+            label: `${byId[id]?.name || id} · $1,250 KILL`,
             data: own.length === axisDates.length ? ownKill : pts,
             borderColor: COLORS[i % COLORS.length],
             backgroundColor: "#f07178",
@@ -326,7 +327,7 @@
             },
             scales: {
               x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
-              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, suggestedMin: 0.88 },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, suggestedMin: 0.78 },
             },
           },
         }));
@@ -369,7 +370,7 @@
             labels: series.map((p) => p.date),
             datasets: [
               { label: `${baseline?.name || "Baseline"} · ${key}`, data: series.map((p) => p.equity), borderColor: "#3dd6c6", pointRadius: 0, borderWidth: 2, tension: 0.05, order: 2 },
-              { label: "10% floor", data: series.map(() => rules.max_loss_floor ?? 0.9), borderColor: "#f07178", borderDash: [6, 4], pointRadius: 0, borderWidth: 1.8, tension: 0, order: 3 },
+              { label: "$20k floor", data: series.map(() => rules.max_loss_floor ?? 0.9), borderColor: "#f07178", borderDash: [6, 4], pointRadius: 0, borderWidth: 1.8, tension: 0, order: 3 },
               killMarkerDataset(series, `5% daily-loss KILL (${kills.length})`),
             ],
           },
@@ -379,8 +380,8 @@
               title: {
                 display: true,
                 text: kills.length
-                  ? `${kills.length} day(s) would have killed the account on the 5% daily-loss rule`
-                  : "No 5% daily-loss kill days in this window",
+                  ? `${kills.length} day(s) would have killed the account on the −$1,250 daily-loss rule`
+                  : "No $1,250 daily-loss kill days in this window",
                 color: kills.length ? "#f07178" : "#8aa397",
                 font: { size: 12 },
               },
@@ -405,12 +406,12 @@
           labels: topN.map((s) => s.name.slice(0, 22)),
           datasets: [
             {
-              label: "Daily headroom (vs −5%)",
+              label: "Daily headroom (vs −$1,250)",
               data: topN.map((s) => (s.risk?.daily_headroom ?? 0) * 100),
               backgroundColor: "#f0a34a",
             },
             {
-              label: "Max-loss headroom (vs 0.90)",
+              label: "Max-loss headroom (vs $20k)",
               data: topN.map((s) => (s.risk?.max_headroom ?? 0) * 100),
               backgroundColor: "#3dd6c6",
             },
