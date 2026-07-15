@@ -23,6 +23,7 @@ from src.ftmo_rules import (
     PayoutPolicy,
     dollars,
     find_first_full_pass_start,
+    random_start_challenges,
     rolling_challenges,
     rolling_funded,
     summarize_attempts,
@@ -67,6 +68,10 @@ PAYOUT = PayoutPolicy(
     mode="above_initial",
 )
 FUNDED_STEP = 10
+# Monte Carlo random-start challenge stress (reproducible).
+MC_DRAWS = 200
+MC_SEED = 42
+MC_MIN_REMAINING = 100
 
 
 def activity_stats(rets: pd.Series) -> dict:
@@ -161,10 +166,17 @@ def _slice_rets(rets: pd.Series, end: pd.Timestamp, calendar_days: int | None) -
     return rets.loc[(rets.index >= start) & (rets.index <= end)]
 
 
-def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard: dict) -> dict:
+def score_strategy(
+    chal: dict,
+    metrics: dict,
+    recent: dict,
+    funded: dict,
+    hoard: dict,
+    mc: dict | None = None,
+) -> dict:
     """
-    Composite for FTMO goals (fail-first + pace + paycheck discipline):
-      1) Fail least often (challenge + funded breach)
+    Composite for FTMO goals (fail-first + random-start robustness + pace):
+      1) Never fail Phase 1/2 under random start dates (Monte Carlo)
       2) Still pass challenge — and clear P1/P2 in fewer trading days
       3) Lock consistent payouts (breach must not eat the stack)
       4) Room to improve = safe but not maxed return
@@ -176,6 +188,14 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
     room_score = float(room) if room is not None else 0.0
     avg_days = chal.get("avg_days_to_full_pass")
     med_days = chal.get("median_days_to_full_pass")
+
+    mc = mc or {}
+    mc_fail = float(mc.get("fail_rate") if mc.get("fail_rate") is not None else fail_rate)
+    mc_p1_fail = float(mc.get("phase1_fail_rate") or 0.0)
+    mc_p2_fail = float(mc.get("phase2_fail_rate") or 0.0)
+    mc_pass = float(mc.get("full_pass_rate") if mc.get("full_pass_rate") is not None else pass_rate)
+    mc_zero = bool(mc.get("zero_fail_p1_p2", mc_fail <= 1e-12))
+    mc_n = int(mc.get("n_attempts") or 0)
 
     sharpe = float(metrics.get("sharpe") or 0.0)
     cagr = float(metrics.get("cagr") or 0.0)
@@ -214,20 +234,29 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
     else:
         pace_score = 0.0
 
+    # Random-start robustness — primary "don't fail P1/P2" gate
+    mc_survival = (
+        0.45 * (1.0 - mc_fail)
+        + 0.20 * (1.0 - mc_p1_fail)
+        + 0.15 * (1.0 - mc_p2_fail)
+        + 0.20 * mc_pass
+    )
+
     survival = (
-        0.32 * (1.0 - fail_rate)
-        + 0.14 * (1.0 - fund_breach)
-        + 0.14 * pass_rate
-        + 0.08 * p1_rate
-        + 0.10 * (1.0 - r_fail)
-        + 0.06 * r_pass
-        + 0.05 * min(max(room_score, 0.0), 0.15) / 0.15
-        + 0.04 * min(max(sharpe, -1.0), 2.5) / 2.5
-        + 0.07 * min(pay_hit, 1.0)
+        0.22 * (1.0 - fail_rate)
+        + 0.10 * (1.0 - fund_breach)
+        + 0.10 * pass_rate
+        + 0.06 * p1_rate
+        + 0.08 * (1.0 - r_fail)
+        + 0.04 * r_pass
+        + 0.04 * min(max(room_score, 0.0), 0.15) / 0.15
+        + 0.03 * min(max(sharpe, -1.0), 2.5) / 2.5
+        + 0.05 * min(pay_hit, 1.0)
+        + 0.28 * mc_survival
     )
 
     ret_util = min(max(cagr, 0.0), 0.25) / 0.25
-    safety_gate = max(0.0, 1.0 - fail_rate / 0.20)
+    safety_gate = max(0.0, 1.0 - max(fail_rate, mc_fail) / 0.20)
     improvement_room = safety_gate * (
         0.35 * (1.0 - fail_rate)
         + 0.20 * (1.0 - fund_breach)
@@ -257,13 +286,13 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
         + 0.05 * min(n_pay / 12.0, 1.0)
     )
 
-    # Survival still leads; pace is now a first-class goal (clear challenge sooner).
     composite = (
-        0.38 * survival
-        + 0.20 * payout_score
-        + 0.15 * return_score
-        + 0.08 * improvement_room
-        + 0.19 * pace_score
+        0.40 * survival
+        + 0.18 * payout_score
+        + 0.14 * return_score
+        + 0.07 * improvement_room
+        + 0.16 * pace_score
+        + 0.05 * (1.0 if mc_zero else 0.0)
     )
     if not continuous_ok:
         composite -= 0.12
@@ -279,7 +308,13 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
         composite -= 0.04
     if p1_rate < 0.10:
         composite -= 0.06
-    # Slow passes: soft penalty even if they eventually clear
+    # Hard preference: any random-start P1/P2 breach is costly
+    if mc_n >= 30 and mc_fail > 0:
+        composite -= 0.10 + min(mc_fail, 0.35) * 0.25
+    if mc_n >= 30 and mc_p1_fail > 0:
+        composite -= 0.06
+    if mc_n >= 30 and mc_p2_fail > 0:
+        composite -= 0.05
     if avg_days is not None and pass_rate >= 0.15 and float(avg_days) > 150:
         composite -= 0.04
     if avg_days is not None and pass_rate >= 0.15 and float(avg_days) > 200:
@@ -291,6 +326,7 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
         "improvement_room": round(float(improvement_room), 4),
         "payout_score": round(float(payout_score), 4),
         "pace_score": round(float(pace_score), 4),
+        "mc_survival_score": round(float(mc_survival), 4),
         "avg_days_to_full_pass": None if avg_days is None else round(float(avg_days), 1),
         "composite": round(float(composite), 4),
         "recent_pass_avg": round(float(r_pass), 4),
@@ -301,6 +337,10 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
         "avg_unpaid_lost": round(lost, 4),
         "fund_breach_rate": round(fund_breach, 4),
         "payout_edge_vs_hoard": round(float(payout_edge), 4),
+        "mc_zero_fail_p1_p2": mc_zero,
+        "mc_fail_rate": round(mc_fail, 4),
+        "mc_phase1_fail_rate": round(mc_p1_fail, 4),
+        "mc_phase2_fail_rate": round(mc_p2_fail, 4),
     }
 
 
@@ -556,7 +596,15 @@ def run() -> dict:
         )
         funded = summarize_funded(funded_paths)
         hoard = summarize_funded(hoard_paths)
-        scores = score_strategy(full["chal"], full["metrics"], recent, funded, hoard)
+        mc_attempts = random_start_challenges(
+            rets,
+            n_draws=MC_DRAWS,
+            seed=MC_SEED,
+            rules=RULES,
+            min_remaining=MC_MIN_REMAINING,
+        )
+        mc = summarize_attempts(mc_attempts)
+        scores = score_strategy(full["chal"], full["metrics"], recent, funded, hoard, mc)
         activity = activity_stats(rets)
 
         headroom = full["chal"].get("avg_room_on_pass")
@@ -572,6 +620,7 @@ def run() -> dict:
             "full_2y": {
                 "metrics": full["metrics"],
                 "challenge": full["chal"],
+                "random_start_mc": mc,
                 "funded_payout": funded,
                 "funded_hoard": hoard,
             },
@@ -595,8 +644,10 @@ def run() -> dict:
         curves[f"{sid}__6m"] = _curve(_slice_rets(rets, end, 183), step=1)
         print(
             f"    2Y pass={full['chal']['full_pass_rate']:.1%} fail={full['chal']['fail_rate']:.1%} "
+            f"MC fail P1={mc['phase1_fail_rate']:.1%} P2={mc['phase2_fail_rate']:.1%} "
+            f"zeroFail={'Y' if mc['zero_fail_p1_p2'] else 'N'} "
             f"fundBreach={funded['breach_rate']:.1%} locked={funded['avg_locked_trader']:.1%} "
-            f"lostOpen={funded['avg_unpaid_lost']:.2%} Sharpe={full['metrics']['sharpe']:.2f} "
+            f"Sharpe={full['metrics']['sharpe']:.2f} "
             f"active={activity['active_day_rate']:.0%} composite={scores['composite']:.3f}"
         )
 
@@ -605,13 +656,30 @@ def run() -> dict:
         r["rank"] = i
 
     winner = rows[0]
-    safe = [r for r in rows if r["full_2y"]["challenge"]["fail_rate"] <= 0.05]
+    safe = [
+        r
+        for r in rows
+        if r["full_2y"]["challenge"]["fail_rate"] <= 0.05
+        and r["full_2y"].get("random_start_mc", {}).get("zero_fail_p1_p2", False)
+    ]
     least_fail = min(
         rows,
         key=lambda r: (
+            r["full_2y"].get("random_start_mc", {}).get("fail_rate", 1.0),
             r["full_2y"]["challenge"]["fail_rate"],
             -r["full_2y"]["challenge"]["full_pass_rate"],
             -r["scores"]["composite"],
+        ),
+    )
+    zero_fail_mc = [
+        r for r in rows if r["full_2y"].get("random_start_mc", {}).get("zero_fail_p1_p2")
+    ]
+    best_zero_fail = max(
+        zero_fail_mc or rows,
+        key=lambda r: (
+            r["scores"]["composite"],
+            r["full_2y"].get("random_start_mc", {}).get("full_pass_rate", 0.0),
+            -r["full_2y"].get("random_start_mc", {}).get("fail_rate", 1.0),
         ),
     )
     best_return = max(
@@ -775,12 +843,25 @@ def run() -> dict:
             },
         },
         "ranking_rubric": {
-            "survival": "Low challenge fail + low funded breach + pass rates",
+            "survival": "Zero Phase 1/2 fails under random-start Monte Carlo + low rolling fail + funded breach",
+            "random_start_mc": f"{MC_DRAWS} random challenge starts (seed={MC_SEED}); gate is no P1/P2 daily/max breaches",
             "pace": "Clear Phase 1 (+10%) and Phase 2 (+5%) in fewer trading days (target ~45–90d full pass)",
             "payout": "Locked trader payouts under closed-above-$25k withdraw; unpaid lost on breach stays small",
             "return": "Sharpe / Sortino / CAGR + locked paycheck yield",
             "improvement_room": "Safe but not maxed — worth carefully leveraging",
-            "composite": "0.38 survival + 0.20 payout + 0.19 pace + 0.15 return + 0.08 improvement",
+            "composite": "0.40 survival (incl. MC) + 0.18 payout + 0.16 pace + 0.14 return + 0.07 improvement + zero-fail bonus",
+        },
+        "random_start_mc": {
+            "n_draws": MC_DRAWS,
+            "seed": MC_SEED,
+            "min_remaining_days": MC_MIN_REMAINING,
+            "note": (
+                "Each strategy is launched from 200 randomly sampled start dates. "
+                "A Phase 1/2 fail = hit −$1,250 daily or −$5k max on that attempt. "
+                "Timeouts (too slow) are tracked separately — zero_fail_p1_p2 means no daily/max breaches."
+            ),
+            "n_zero_fail_books": len(zero_fail_mc),
+            "n_strategies": len(rows),
         },
         "payout_policy": {
             "assumption": "Withdraw closed excess above $25k only. Underwater = $0 withdrawable until back at initial.",
@@ -809,6 +890,23 @@ def run() -> dict:
                 "fail_rate": least_fail["full_2y"]["challenge"]["fail_rate"],
                 "fails": least_fail["full_2y"]["challenge"]["fails"],
                 "attempts": least_fail["full_2y"]["challenge"]["n_attempts"],
+                "mc_fail_rate": least_fail["full_2y"].get("random_start_mc", {}).get("fail_rate"),
+                "mc_zero_fail_p1_p2": least_fail["full_2y"].get("random_start_mc", {}).get("zero_fail_p1_p2"),
+            },
+            "zero_fail_random_start": {
+                "id": best_zero_fail["id"],
+                "name": best_zero_fail["name"],
+                "n_zero_fail_books": len(zero_fail_mc),
+                "mc_fail_rate": best_zero_fail["full_2y"].get("random_start_mc", {}).get("fail_rate"),
+                "mc_phase1_fail_rate": best_zero_fail["full_2y"].get("random_start_mc", {}).get("phase1_fail_rate"),
+                "mc_phase2_fail_rate": best_zero_fail["full_2y"].get("random_start_mc", {}).get("phase2_fail_rate"),
+                "mc_full_pass_rate": best_zero_fail["full_2y"].get("random_start_mc", {}).get("full_pass_rate"),
+                "mc_n_attempts": best_zero_fail["full_2y"].get("random_start_mc", {}).get("n_attempts"),
+                "composite": best_zero_fail["scores"]["composite"],
+                "note": (
+                    f"Best composite among {len(zero_fail_mc)} books with zero Phase 1/2 breaches "
+                    f"across {MC_DRAWS} random start dates."
+                ),
             },
             "best_return": {
                 "id": best_return["id"],
@@ -963,6 +1061,12 @@ def run() -> dict:
         "Least fails:",
         least_fail["name"],
         f"fail={least_fail['full_2y']['challenge']['fail_rate']:.1%}",
+        f"MC fail={least_fail['full_2y'].get('random_start_mc', {}).get('fail_rate', 0):.1%}",
+    )
+    print(
+        f"Random-start zero P1/P2 fail: {len(zero_fail_mc)}/{len(rows)} books · "
+        f"best={best_zero_fail['name']} MC pass="
+        f"{best_zero_fail['full_2y'].get('random_start_mc', {}).get('full_pass_rate', 0):.0%}"
     )
     print(
         "Best return:",

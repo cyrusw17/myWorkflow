@@ -207,6 +207,34 @@
     </section>
 
     <section class="panel">
+      <h2>Random-start challenge stress — Phase 1 &amp; 2</h2>
+      <p class="hint" id="mcHint">
+        Each book is launched from 200 randomly sampled start dates. Fail = hit −$1,250 daily or −$5k max in Phase 1 or 2.
+        Timeouts (too slow) are separate. Prefer books with <strong style="color:var(--ok)">zero P1/P2 fails</strong>.
+      </p>
+      <div class="row" id="mcBadges"></div>
+      <div style="overflow-x:auto">
+        <table id="mcTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Strategy</th>
+              <th>Zero fail</th>
+              <th>MC fail</th>
+              <th>P1 fail</th>
+              <th>P2 fail</th>
+              <th>MC full pass</th>
+              <th>MC avg days</th>
+              <th>P05 / P95 days</th>
+              <th>Attempts</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Strategy board — 2Y challenge tallies</h2>
       <p class="hint" id="rubric"></p>
       <div style="overflow-x:auto">
@@ -218,6 +246,7 @@
               <th>Composite</th>
               <th>Full pass</th>
               <th>Fail rate</th>
+              <th>MC fail</th>
               <th>Fails</th>
               <th>Daily / Max</th>
               <th>Timeouts</th>
@@ -582,6 +611,7 @@
         card("Best paycheck (funded)", `<p><strong style="color:var(--ink)">${ch.best_paycheck?.name || "—"}</strong></p><p>Avg locked trader payout ${pct(ch.best_paycheck?.avg_locked_trader)} · funded breach ${pct(ch.best_paycheck?.fund_breach_rate)}</p><p>Unpaid lost if paying out ${pct(ch.best_paycheck?.avg_unpaid_lost)} vs hoarding ${pct(ch.best_paycheck?.hoard_unpaid_lost)}</p><p>${ch.best_paycheck?.note || ""}</p>`),
         card("Most room to improve", `<p><strong style="color:var(--ink)">${ch.most_room_to_improve?.name || "—"}</strong></p><p>Improvement ${num(ch.most_room_to_improve?.improvement_room, 3)}</p><p>${ch.most_room_to_improve?.note || ""}</p>`),
         card("Fastest challenge", `<p><strong style="color:var(--ink)">${ch.fastest_challenge?.name || "—"}</strong></p><p>Avg <strong style="color:var(--ok)">${num(ch.fastest_challenge?.avg_days_to_full_pass, 0)}</strong> trading days to clear P1+P2 (med ${num(ch.fastest_challenge?.median_days_to_full_pass, 0)}) · pass ${pct(ch.fastest_challenge?.full_pass_rate)} · fail ${pct(ch.fastest_challenge?.fail_rate)}</p><p>${ch.fastest_challenge?.note || ""}</p>`),
+        card("Zero-fail random start", `<p><strong style="color:var(--ink)">${ch.zero_fail_random_start?.name || "—"}</strong></p><p>${ch.zero_fail_random_start?.n_zero_fail_books ?? "—"} books with <strong style="color:var(--ok)">0</strong> P1/P2 breaches across ${ch.zero_fail_random_start?.mc_n_attempts ?? "—"} random starts · MC pass ${pct(ch.zero_fail_random_start?.mc_full_pass_rate)}</p><p>${ch.zero_fail_random_start?.note || ""}</p>`),
         card("Pass-defend · Active", `<p><strong style="color:var(--ink)">${ch.active_sibling?.active_name || "—"}</strong></p><p>Active days ${pct(ch.active_sibling?.active_active_day_rate)} vs base ${pct(ch.active_sibling?.base_active_day_rate)} · flat ${pct(ch.active_sibling?.active_flat_day_rate)} vs ${pct(ch.active_sibling?.base_flat_day_rate)}</p><p>Composite ${num(ch.active_sibling?.active_composite, 3)} (#${ch.active_sibling?.active_rank ?? "—"}) vs base ${num(ch.active_sibling?.base_composite, 3)}</p>`),
         card("RP Dual · Active", `<p><strong style="color:var(--ink)">${ch.rp_dual_sibling?.active_name || "—"}</strong></p><p>Active days ${pct(ch.rp_dual_sibling?.active_active_day_rate)} vs base ${pct(ch.rp_dual_sibling?.base_active_day_rate)} · flat ${pct(ch.rp_dual_sibling?.active_flat_day_rate)} vs ${pct(ch.rp_dual_sibling?.base_flat_day_rate)}</p><p>Composite ${num(ch.rp_dual_sibling?.active_composite, 3)} (#${ch.rp_dual_sibling?.active_rank ?? "—"}) vs base ${num(ch.rp_dual_sibling?.base_composite, 3)}</p>`),
         card("Most trades / month", `<p><strong style="color:var(--ink)">${ch.most_trades?.name || "—"}</strong></p><p>${num(ch.most_trades?.trades_per_month, 1)} trade-days/mo · active ${pct(ch.most_trades?.active_day_rate)} · ${ch.most_trades?.meets_20tpm ? "≥20 ✓" : "under 20"}</p><p>${ch.most_trades?.note || ""}</p>`),
@@ -600,6 +630,46 @@
         }).join("");
       }
 
+      // Random-start Monte Carlo stress board
+      const mcMeta = data.random_start_mc || {};
+      const mcHint = document.getElementById("mcHint");
+      if (mcHint && mcMeta.note) mcHint.textContent = mcMeta.note;
+      const mcBadges = document.getElementById("mcBadges");
+      if (mcBadges) {
+        mcBadges.innerHTML = [
+          `<div class="badge ok"><strong>${mcMeta.n_zero_fail_books ?? "—"} / ${mcMeta.n_strategies ?? strat.length}</strong> zero P1/P2 fail</div>`,
+          `<div class="badge">${mcMeta.n_draws || 200} random starts · seed ${mcMeta.seed ?? 42}</div>`,
+          `<div class="badge">Best zero-fail · <strong>${ch.zero_fail_random_start?.name || "—"}</strong></div>`,
+        ].join("");
+      }
+      const mcBody = document.querySelector("#mcTable tbody");
+      if (mcBody) {
+        const mcSorted = [...strat].sort((a, b) => {
+          const am = a.full_2y.random_start_mc || {};
+          const bm = b.full_2y.random_start_mc || {};
+          const az = am.zero_fail_p1_p2 ? 0 : 1;
+          const bz = bm.zero_fail_p1_p2 ? 0 : 1;
+          if (az !== bz) return az - bz;
+          return (am.fail_rate || 0) - (bm.fail_rate || 0) || (b.scores.composite - a.scores.composite);
+        });
+        mcBody.innerHTML = mcSorted.map((s) => {
+          const m = s.full_2y.random_start_mc || {};
+          const z = !!m.zero_fail_p1_p2;
+          return `<tr>
+            <td>${s.rank}</td>
+            <td><strong>${s.name}</strong></td>
+            <td class="num ${z ? "up" : "down"}">${z ? "YES ✓" : "NO"}</td>
+            <td class="num ${m.fail_rate > 0 ? "down" : "up"}">${pct(m.fail_rate)}</td>
+            <td class="num ${m.phase1_fail_rate > 0 ? "down" : "up"}">${pct(m.phase1_fail_rate)}</td>
+            <td class="num ${m.phase2_fail_rate > 0 ? "down" : "up"}">${pct(m.phase2_fail_rate)}</td>
+            <td class="num up">${pct(m.full_pass_rate)}</td>
+            <td class="num">${m.avg_days_to_full_pass == null ? "—" : num(m.avg_days_to_full_pass, 0)}</td>
+            <td class="num">${m.p05_days_to_full_pass == null ? "—" : `${num(m.p05_days_to_full_pass, 0)} / ${num(m.p95_days_to_full_pass, 0)}`}</td>
+            <td class="num">${m.n_attempts ?? "—"}</td>
+          </tr>`;
+        }).join("");
+      }
+
       document.querySelector("#stratTable tbody").innerHTML = strat.map((s) => {
         const c = s.full_2y.challenge;
         const m = s.full_2y.metrics;
@@ -612,6 +682,7 @@
           <td class="num"><strong>${num(s.scores.composite, 3)}</strong></td>
           <td class="num up">${pct(c.full_pass_rate)}</td>
           <td class="num ${c.fail_rate > 0.15 ? "down" : "up"}">${pct(c.fail_rate)}</td>
+          <td class="num ${(s.full_2y.random_start_mc?.fail_rate || 0) > 0 ? "down" : "up"}">${pct(s.full_2y.random_start_mc?.fail_rate)}${s.full_2y.random_start_mc?.zero_fail_p1_p2 ? " ✓" : ""}</td>
           <td class="num">${c.fails}/${c.n_attempts}</td>
           <td class="num">${c.fail_daily} / ${c.fail_max}</td>
           <td class="num">${c.timeouts}</td>

@@ -276,6 +276,34 @@ def rolling_challenges(
     return out
 
 
+def random_start_challenges(
+    rets: pd.Series,
+    *,
+    n_draws: int = 200,
+    seed: int = 42,
+    rules: FtmoRules | None = None,
+    min_remaining: int = 100,
+) -> list[ChallengeResult]:
+    """
+    Monte Carlo challenge stress: launch independent 2-step attempts from
+    randomly sampled start dates (reproducible via `seed`).
+
+    Used to verify Phase 1 / Phase 2 do not breach $1,250 daily or $5k max
+    across many launch dates — not just a fixed rolling grid.
+    """
+    rules = rules or FtmoRules()
+    r = rets.fillna(0.0)
+    n = len(r)
+    hi = max(0, n - min_remaining)
+    if hi <= 0 or n_draws <= 0:
+        return []
+    rng = np.random.default_rng(int(seed))
+    replace = hi < n_draws
+    idxs = rng.choice(hi, size=int(n_draws), replace=replace)
+    # Sort for stable logs; each attempt is independent of order.
+    return [simulate_challenge(r, int(i), rules) for i in sorted(int(x) for x in idxs)]
+
+
 @dataclass
 class ChallengeJourney:
     """
@@ -693,30 +721,41 @@ def summarize_attempts(attempts: list[ChallengeResult]) -> dict:
     # Drop data-censored attempts so short windows don't fake timeouts
     scored = [a for a in attempts if a.status != "censored"]
     censored_n = len(attempts) - len(scored)
+    empty = {
+        "n_attempts": 0,
+        "n_launched": len(attempts),
+        "n_censored": censored_n,
+        "full_pass_rate": 0.0,
+        "phase1_pass_rate": 0.0,
+        "phase1_fail_rate": 0.0,
+        "phase2_fail_rate": 0.0,
+        "phase2_fail_given_p1": 0.0,
+        "fail_rate": 0.0,
+        "fail_daily": 0,
+        "fail_max": 0,
+        "fail_phase1": 0,
+        "fail_phase2": 0,
+        "timeouts": 0,
+        "full_passes": 0,
+        "fails": 0,
+        "avg_days_to_full_pass": None,
+        "avg_room_on_pass": None,
+        "avg_min_equity_phase1": None,
+        "median_days_to_full_pass": None,
+        "zero_fail_p1_p2": True,
+        "p05_days_to_full_pass": None,
+        "p95_days_to_full_pass": None,
+    }
     if not scored:
-        return {
-            "n_attempts": 0,
-            "n_launched": len(attempts),
-            "n_censored": censored_n,
-            "full_pass_rate": 0.0,
-            "phase1_pass_rate": 0.0,
-            "fail_rate": 0.0,
-            "fail_daily": 0,
-            "fail_max": 0,
-            "timeouts": 0,
-            "full_passes": 0,
-            "fails": 0,
-            "avg_days_to_full_pass": None,
-            "avg_room_on_pass": None,
-            "avg_min_equity_phase1": None,
-            "median_days_to_full_pass": None,
-        }
+        return empty
 
     n = len(scored)
     full = [a for a in scored if a.status == "full_pass"]
     p1_ok = [a for a in scored if a.phase1.status == "pass"]
     fails = [a for a in scored if a.status.startswith("fail_")]
     timeouts = [a for a in scored if a.status.startswith("timeout_")]
+    fail_p1 = [a for a in scored if a.status == "fail_phase1"]
+    fail_p2 = [a for a in scored if a.status == "fail_phase2"]
     fail_daily = sum(1 for a in scored if a.fail_reason == "daily_loss")
     fail_max = sum(1 for a in scored if a.fail_reason == "max_loss")
 
@@ -730,6 +769,7 @@ def summarize_attempts(attempts: list[ChallengeResult]) -> dict:
             rooms.append(a.phase2.room_to_floor)
 
     min_eqs = [a.phase1.min_equity for a in scored]
+    reached_p2 = len(p1_ok)
 
     return {
         "n_attempts": n,
@@ -737,9 +777,14 @@ def summarize_attempts(attempts: list[ChallengeResult]) -> dict:
         "n_censored": censored_n,
         "full_pass_rate": len(full) / n,
         "phase1_pass_rate": len(p1_ok) / n,
+        "phase1_fail_rate": len(fail_p1) / n,
+        "phase2_fail_rate": len(fail_p2) / n,
+        "phase2_fail_given_p1": (len(fail_p2) / reached_p2) if reached_p2 else 0.0,
         "fail_rate": len(fails) / n,
         "fail_daily": fail_daily,
         "fail_max": fail_max,
+        "fail_phase1": len(fail_p1),
+        "fail_phase2": len(fail_p2),
         "timeouts": len(timeouts),
         "full_passes": len(full),
         "fails": len(fails),
@@ -747,6 +792,9 @@ def summarize_attempts(attempts: list[ChallengeResult]) -> dict:
         "avg_room_on_pass": float(np.mean(rooms)) if rooms else None,
         "avg_min_equity_phase1": float(np.mean(min_eqs)) if min_eqs else None,
         "median_days_to_full_pass": float(np.median(days_full)) if days_full else None,
+        "zero_fail_p1_p2": len(fails) == 0,
+        "p05_days_to_full_pass": float(np.percentile(days_full, 5)) if days_full else None,
+        "p95_days_to_full_pass": float(np.percentile(days_full, 95)) if days_full else None,
     }
 
 
