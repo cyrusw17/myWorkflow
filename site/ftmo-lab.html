@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FTMO Challenge lab — pass rate vs fail tallies</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg0: #0c1210; --bg1: #14201c; --ink: #e8f0ec; --muted: #8aa397;
+      --line: #24352f; --a: #3dd6c6; --b: #f0a34a; --ok: #7dffb3; --bad: #f07178;
+      --spy: #7aa2ff; --v2: #c4b5fd;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(1100px 560px at 12% -10%, #1a3a32 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #241e18 0%, transparent 52%),
+        var(--bg0);
+      color: var(--ink); min-height: 100vh;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 1.25rem 0.9rem 3.5rem; }
+    @media (min-width: 720px) { main { padding: 2rem 1.25rem 4rem; } }
+    nav.top { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    nav.top a {
+      color: var(--a); text-decoration: none; border: 1px solid var(--line);
+      background: var(--bg1); padding: 0.35rem 0.65rem; font-size: 0.82rem;
+    }
+    nav.top a.here { color: var(--ink); border-color: #2d6b4f; }
+    h1 { font-size: clamp(1.4rem, 5vw, 2.2rem); letter-spacing: -0.03em; margin: 0 0 0.35rem; }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; max-width: 50rem; line-height: 1.45; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    .badge {
+      border: 1px solid var(--line); background: var(--bg1);
+      padding: 0.35rem 0.6rem; font-size: 0.78rem; color: var(--muted);
+    }
+    .badge strong { color: var(--ink); }
+    .badge.ok { border-color: #2d6b4f; color: var(--ok); }
+    .badge.warn { border-color: #6b4a2d; color: var(--b); }
+    .panel {
+      border: 1px solid var(--line); background: rgba(20,32,28,0.85);
+      padding: 0.85rem 0.75rem 0.75rem; margin-bottom: 1rem;
+    }
+    .panel h2 {
+      margin: 0 0 0.75rem; font-size: 0.92rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .hint { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+    .champ-grid {
+      display: grid; grid-template-columns: 1fr; gap: 0.75rem;
+    }
+    @media (min-width: 800px) { .champ-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .box {
+      border: 1px solid var(--line); background: rgba(12,18,16,0.45); padding: 0.75rem;
+    }
+    .box.primary { border-color: #2d6b4f; }
+    .box h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+    .box p, .box li { color: var(--muted); font-size: 0.82rem; line-height: 1.45; margin: 0.25rem 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th, td { text-align: left; padding: 0.45rem 0.35rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .up { color: var(--ok); } .down { color: var(--bad); }
+    .chart-box { position: relative; width: 100%; height: 360px; }
+    .chart-box.sm { height: 280px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+    .tabs button {
+      border: 1px solid var(--line); background: var(--bg1); color: var(--muted);
+      padding: 0.3rem 0.6rem; font-size: 0.78rem; cursor: pointer;
+    }
+    .tabs button.on { color: var(--ink); border-color: #2d6b4f; }
+    .checklist { color: var(--muted); font-size: 0.88rem; line-height: 1.5; padding-left: 1.1rem; }
+    .checklist li { margin-bottom: 0.35rem; }
+    footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
+    a { color: var(--a); }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="top">
+      <a href="./index.html">Bake-off</a>
+      <a href="./confluence-lab.html">Confluence boost</a>
+      <a href="./dd-lab.html">V2 drawdown lab</a>
+      <a href="./funded-lab.html">Funded prop lab</a>
+      <a class="here" href="./ftmo-lab.html">FTMO Challenge lab</a>
+    </nav>
+
+    <h1>FTMO Challenge lab</h1>
+    <p class="sub">
+      Multi-asset quant bakeoff under classic <strong>FTMO 2-Step</strong> rules
+      (Phase1 +10%, Phase2 +5%, daily −5%, static −10%).
+      Strategies cover FX, index CFDs, metals, crypto, and stock CFDs.
+      Ranked fail-first: least breaches, then pass rate, then consistent return — with 2Y / 6M / 3M / 1M focus.
+    </p>
+
+    <div class="row" id="badges"></div>
+    <p class="hint" id="disclaimer"></p>
+
+    <section class="panel">
+      <h2>Champions</h2>
+      <div class="champ-grid" id="champions"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Winner equity — focus windows</h2>
+      <p class="hint">Rebased curves for the overall winner. Toggle horizon — 6M / 3M / 1M get emphasis for current regime.</p>
+      <div class="tabs" id="focusTabs"></div>
+      <div class="chart-box"><canvas id="focusChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Strategy board — 2Y challenge tallies</h2>
+      <p class="hint" id="rubric"></p>
+      <div style="overflow-x:auto">
+        <table id="stratTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Strategy</th>
+              <th>Composite</th>
+              <th>Full pass</th>
+              <th>Fail rate</th>
+              <th>Fails</th>
+              <th>Daily / Max</th>
+              <th>Timeouts</th>
+              <th>Avg days</th>
+              <th>Sharpe</th>
+              <th>CAGR</th>
+              <th>MaxDD</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Recent windows — 6M / 3M / 1M</h2>
+      <p class="hint">Continuous path metrics + single challenge started at window open. Rolling 2-step counts are thin on short horizons (often censored).</p>
+      <div style="overflow-x:auto">
+        <table id="windowTable">
+          <thead>
+            <tr>
+              <th>Strategy</th>
+              <th>Win</th>
+              <th>Return</th>
+              <th>Sharpe</th>
+              <th>MaxDD</th>
+              <th>Single-shot</th>
+              <th>Path daily hits</th>
+              <th>Path max breach</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Top books overlay (6M)</h2>
+      <div class="chart-box sm"><canvas id="overlayChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Playbook</h2>
+      <div class="champ-grid" id="playbook"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Universe & rules</h2>
+      <ul class="checklist" id="metaList"></ul>
+    </section>
+
+    <footer>
+      Generate: <code>python3 -m src.run_ftmo_lab</code> · Yahoo daily proxies ≠ FTMO fills/swaps/intraday marks.
+    </footer>
+  </main>
+
+  <script>
+    const COLORS = ["#3dd6c6", "#f0a34a", "#7aa2ff", "#c4b5fd", "#7dffb3", "#f07178", "#e8c47c", "#8ecae6"];
+    const charts = [];
+
+    const pct = (x) => x == null || Number.isNaN(x) ? "—" : `${(100 * x).toFixed(1)}%`;
+    const num = (x, d = 2) => x == null || Number.isNaN(x) ? "—" : Number(x).toFixed(d);
+
+    async function main() {
+      const res = await fetch(`./data/ftmo_lab.json?v=${Date.now()}`, { cache: "no-store" });
+      const data = await res.json();
+      render(data);
+    }
+
+    function render(data) {
+      const strat = data.strategies || [];
+      const top = strat[0];
+      const ch = data.champions || {};
+      const uni = data.universe || {};
+      const rules = data.rules || {};
+
+      document.getElementById("disclaimer").textContent = data.disclaimer || "";
+      document.getElementById("rubric").textContent =
+        `Rubric: ${data.ranking_rubric?.composite || ""} · Survival=${data.ranking_rubric?.survival || ""}`;
+
+      document.getElementById("badges").innerHTML = `
+        <div class="badge ok"><strong>Winner</strong> · ${top?.name || "—"}</div>
+        <div class="badge"><strong>Strategies</strong> · ${strat.length}</div>
+        <div class="badge"><strong>2Y window</strong> · ${uni.start} → ${uni.end}</div>
+        <div class="badge"><strong>2Y full-pass</strong> · ${pct(top?.full_2y?.challenge?.full_pass_rate)}</div>
+        <div class="badge ok"><strong>2Y fail</strong> · ${pct(top?.full_2y?.challenge?.fail_rate)} (${top?.full_2y?.challenge?.fails || 0}/${top?.full_2y?.challenge?.n_attempts || 0})</div>
+        <div class="badge"><strong>Sharpe</strong> · ${num(top?.full_2y?.metrics?.sharpe)}</div>
+      `;
+
+      const card = (title, body) => `<div class="box ${title.startsWith("Overall") ? "primary" : ""}"><h3>${title}</h3>${body}</div>`;
+      document.getElementById("champions").innerHTML = [
+        card("Overall winner", `<p><strong style="color:var(--ink)">${ch.overall?.name || "—"}</strong></p><p>${ch.overall?.why || ""}</p>`),
+        card("Least failures", `<p><strong style="color:var(--ink)">${ch.least_fails?.name || "—"}</strong></p><p>Fail rate ${pct(ch.least_fails?.fail_rate)} · ${ch.least_fails?.fails || 0} fails / ${ch.least_fails?.attempts || 0} scored attempts</p>`),
+        card("Best return profile", `<p><strong style="color:var(--ink)">${ch.best_return?.name || "—"}</strong></p><p>Return score ${num(ch.best_return?.return_score, 3)} · Sharpe ${num(ch.best_return?.sharpe)} · CAGR ${pct(ch.best_return?.cagr)}</p>`),
+        card("Most room to improve", `<p><strong style="color:var(--ink)">${ch.most_room_to_improve?.name || "—"}</strong></p><p>Improvement ${num(ch.most_room_to_improve?.improvement_room, 3)}</p><p>${ch.most_room_to_improve?.note || ""}</p>`),
+      ].join("");
+
+      document.querySelector("#stratTable tbody").innerHTML = strat.map((s) => {
+        const c = s.full_2y.challenge;
+        const m = s.full_2y.metrics;
+        return `<tr>
+          <td>${s.rank}</td>
+          <td><strong>${s.name}</strong><div class="hint" style="margin:0">${s.family} · ${s.markets}</div></td>
+          <td class="num"><strong>${num(s.scores.composite, 3)}</strong></td>
+          <td class="num up">${pct(c.full_pass_rate)}</td>
+          <td class="num ${c.fail_rate > 0.15 ? "down" : "up"}">${pct(c.fail_rate)}</td>
+          <td class="num">${c.fails}/${c.n_attempts}</td>
+          <td class="num">${c.fail_daily} / ${c.fail_max}</td>
+          <td class="num">${c.timeouts}</td>
+          <td class="num">${c.avg_days_to_full_pass == null ? "—" : num(c.avg_days_to_full_pass, 0)}</td>
+          <td class="num">${num(m.sharpe)}</td>
+          <td class="num">${pct(m.cagr)}</td>
+          <td class="num ${Math.abs(m.max_dd) > 0.1 ? "down" : ""}">${pct(m.max_dd)}</td>
+        </tr>`;
+      }).join("");
+
+      const winRows = [];
+      for (const s of strat.slice(0, 10)) {
+        for (const w of ["6M", "3M", "1M"]) {
+          const win = s.windows[w];
+          const shot = win.single_shot;
+          const pb = win.path_breaches || {};
+          winRows.push(`<tr>
+            <td>${s.name}</td>
+            <td>${w}</td>
+            <td class="num ${win.metrics.total_return >= 0 ? "up" : "down"}">${pct(win.metrics.total_return)}</td>
+            <td class="num">${num(win.metrics.sharpe)}</td>
+            <td class="num">${pct(win.metrics.max_dd)}</td>
+            <td>${shot ? shot.status : "—"}</td>
+            <td class="num">${pb.daily_loss_events ?? "—"}</td>
+            <td class="${pb.max_loss_breach ? "down" : "up"}">${pb.max_loss_breach ? "YES" : "no"}</td>
+          </tr>`);
+        }
+      }
+      document.querySelector("#windowTable tbody").innerHTML = winRows.join("");
+
+      const pb = data.playbook || {};
+      document.getElementById("playbook").innerHTML = `
+        <div class="box primary">
+          <h3>Recommended for FTMO 2-Step</h3>
+          <p><strong style="color:var(--ink)">${(strat.find(s => s.id === pb.recommended) || top || {}).name || pb.recommended}</strong></p>
+          <p>${(strat.find(s => s.id === pb.recommended) || top || {}).thesis || ""}</p>
+        </div>
+        <div class="box">
+          <h3>Challenge ops</h3>
+          <ul class="checklist">${(pb.challenge_ops || []).map(x => `<li>${x}</li>`).join("")}</ul>
+        </div>
+        <div class="box">
+          <h3>Improvement levers</h3>
+          <ul class="checklist">${(pb.improvement_levers || []).map(x => `<li>${x}</li>`).join("")}</ul>
+        </div>
+        <div class="box">
+          <h3>Rules modeled</h3>
+          <p>P1 ${pct(rules.phase1_target)} · P2 ${pct(rules.phase2_target)} · Daily ${pct(rules.daily_loss)} · Max static ${pct(rules.max_loss_static)}</p>
+          <p>Sim caps: P1 ≤ ${rules.sim_max_days_phase1}d · P2 ≤ ${rules.sim_max_days_phase2}d · attempt every ${rules.attempt_step_days}d</p>
+        </div>
+      `;
+
+      document.getElementById("metaList").innerHTML = [
+        `Universe: ${(uni.tickers || []).length} Yahoo proxies — FX ${(uni.groups?.fx || []).length}, indices ${(uni.groups?.indices || []).length}, commod ${(uni.groups?.commod || []).length}, crypto ${(uni.groups?.crypto || []).length}, stock CFDs ${(uni.groups?.stock_cfd || []).length}.`,
+        ...(rules.notes || []),
+        "Fail tallies = daily-loss + max-loss breaches only. Timeouts are separate (too slow to hit target inside sim cap).",
+        "Mean-reversion / naked crypto underperformed fail-first ranking — trend + risk-parity dominated.",
+      ].map((t) => `<li>${t}</li>`).join("");
+
+      // Focus chart
+      const focus = data.winner_focus_curves || {};
+      const tabs = document.getElementById("focusTabs");
+      let focusKey = "6M";
+      const drawFocus = (key) => {
+        focusKey = key;
+        [...tabs.querySelectorAll("button")].forEach((b) => b.classList.toggle("on", b.dataset.k === key));
+        const series = focus[key] || [];
+        const existing = charts.find(c => c.canvas.id === "focusChart");
+        if (existing) { existing.destroy(); charts.splice(charts.indexOf(existing), 1); }
+        charts.push(new Chart(document.getElementById("focusChart"), {
+          type: "line",
+          data: {
+            labels: series.map((p) => p.date),
+            datasets: [{
+              label: `${top?.name || "Winner"} · ${key}`,
+              data: series.map((p) => p.equity),
+              borderColor: "#3dd6c6",
+              tension: 0.05,
+              pointRadius: 0,
+              borderWidth: 2,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: "#8aa397" } } },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
+            },
+          },
+        }));
+      };
+      tabs.innerHTML = ["1M", "3M", "6M", "2Y"].map((k) =>
+        `<button type="button" data-k="${k}">${k}</button>`
+      ).join("");
+      tabs.onclick = (e) => {
+        const b = e.target.closest("button");
+        if (b) drawFocus(b.dataset.k);
+      };
+      drawFocus("6M");
+
+      // Overlay top 5 on 6M
+      const top5 = strat.slice(0, 5);
+      const base = data.curves_6m?.[top5[0]?.id] || [];
+      charts.push(new Chart(document.getElementById("overlayChart"), {
+        type: "line",
+        data: {
+          labels: base.map((p) => p.date),
+          datasets: top5.map((s, i) => ({
+            label: s.name,
+            data: (data.curves_6m?.[s.id] || []).map((p) => p.equity),
+            borderColor: COLORS[i % COLORS.length],
+            tension: 0.05,
+            pointRadius: 0,
+            borderWidth: i === 0 ? 2.4 : 1.5,
+          })),
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 11 } } } },
+          scales: {
+            x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
+            y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
+          },
+        },
+      }));
+    }
+
+    main().catch((e) => {
+      document.body.insertAdjacentHTML("beforeend", `<p style="color:#f07178;padding:1rem">Failed to load ftmo_lab.json: ${e}</p>`);
+    });
+  </script>
+</body>
+</html>
