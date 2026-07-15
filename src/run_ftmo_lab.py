@@ -22,11 +22,13 @@ from src.ftmo_rules import (
     FtmoRules,
     PayoutPolicy,
     dollars,
+    find_first_full_pass_start,
     rolling_challenges,
     rolling_funded,
     summarize_attempts,
     summarize_funded,
     simulate_challenge,
+    walk_challenge_to_funded,
     walk_daily_withdraw,
 )
 from src.ftmo_strategies import FTMO_TICKERS, STRATEGY_BUILDERS, STRATEGY_META
@@ -98,6 +100,38 @@ def _curve(rets: pd.Series, step: int = 1, *, daily_loss: float | None = None) -
         }
         for dt, val in eq.items()
     ]
+
+
+def _journey_pack(rets: pd.Series, *, sid: str, name: str) -> dict:
+    """
+    Continuous P1 (+10%) → reset → P2 (+5%) → reset → funded profit path.
+    Prefers the first start that clears both challenge phases when available.
+    """
+    r = rets.fillna(0.0)
+    start_idx = find_first_full_pass_start(r, step=ATTEMPT_STEP, rules=RULES, min_remaining=80)
+    j = walk_challenge_to_funded(r, start_idx, RULES, max_funded_days=PAYOUT.max_days)
+    return {
+        "id": sid,
+        "name": name,
+        "status": j.status,
+        "start": j.start,
+        "start_idx": int(start_idx),
+        "phase1_days": j.phase1_days,
+        "phase2_days": j.phase2_days,
+        "funded_days": j.funded_days,
+        "locked_profit": round(float(j.locked_profit), 6),
+        "locked_profit_dollars": round(dollars(j.locked_profit, RULES), 2),
+        "locked_trader_dollars": round(dollars(j.locked_profit * PAYOUT.trader_split, RULES), 2),
+        "end_equity": round(float(j.end_equity), 6),
+        "end_equity_dollars": round(dollars(j.end_equity, RULES), 2),
+        "fail_reason": j.fail_reason,
+        "markers": j.markers,
+        "points": j.points,
+        "phase1_target": RULES.phase1_target,
+        "phase2_target": RULES.phase2_target,
+        "phase1_target_dollars": round(dollars(1.0 + RULES.phase1_target, RULES), 2),
+        "phase2_target_dollars": round(dollars(1.0 + RULES.phase2_target, RULES), 2),
+    }
 
 
 def _slice_rets(rets: pd.Series, end: pd.Timestamp, calendar_days: int | None) -> pd.Series:
@@ -601,6 +635,29 @@ def run() -> dict:
     }
     risk_visuals = build_risk_visuals(winner_rets, rows, RULES)
 
+    # Challenge → funded journeys (P1 +10% → reset → P2 +5% → reset → funded profits)
+    journey_ids = []
+    for sid in (
+        winner["id"],
+        "pass_defend",
+        "pass_defend_active",
+        "rp_dual_blend",
+        "rp_dual_blend_active",
+    ):
+        if sid in STRATEGY_BUILDERS and sid not in journey_ids:
+            journey_ids.append(sid)
+    journeys = {}
+    print("Building challenge→funded journeys…")
+    for sid in journey_ids:
+        jrets = STRATEGY_BUILDERS[sid](prices).reindex(prices.index).fillna(0.0)
+        pack = _journey_pack(jrets, sid=sid, name=STRATEGY_META[sid].name)
+        journeys[sid] = pack
+        print(
+            f"  journey {sid}: status={pack['status']} "
+            f"P1={pack['phase1_days']}d P2={pack['phase2_days']}d "
+            f"funded={pack['funded_days']}d locked=${pack['locked_profit_dollars']:,.0f}"
+        )
+
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "disclaimer": (
@@ -751,6 +808,18 @@ def run() -> dict:
             # Back-compat aliases used by older page snippets
             "base_6m": curves.get("pass_defend__6m", []),
             "active_6m": curves.get("pass_defend_active__6m", []),
+        },
+        "challenge_journeys": {
+            "default_id": winner["id"] if winner["id"] in journeys else (journey_ids[0] if journey_ids else None),
+            "ids": journey_ids,
+            "phase1_target": RULES.phase1_target,
+            "phase2_target": RULES.phase2_target,
+            "note": (
+                "Phase 1 needs +10% closed equity (no mid-phase withdraw), then resets to $25k. "
+                "Phase 2 needs +5%, then resets again. Funded phase withdraws closed excess ≥ $25k "
+                "and tallies locked profit — the live ops scoreboard."
+            ),
+            "by_id": journeys,
         },
         "risk_visuals": risk_visuals,
         "curves": {r["id"]: curves[r["id"]] for r in rows},

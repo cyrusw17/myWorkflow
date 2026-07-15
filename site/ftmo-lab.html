@@ -186,6 +186,18 @@
     </section>
 
     <section class="panel">
+      <h2>Challenge journey — Phase 1 → Phase 2 → Funded</h2>
+      <p class="hint" id="journeyHint">
+        Continuous path: Phase 1 needs <strong>+10%</strong> (equity stays in-account), then resets to $25k.
+        Phase 2 needs <strong>+5%</strong>, then resets again into an official funded book.
+        After funded, <strong style="color:var(--b)">gold</strong> locks closed excess above $25k.
+      </p>
+      <div class="row" id="journeyBadges"></div>
+      <div class="tabs" id="journeyTabs"></div>
+      <div class="chart-box" style="height:400px"><canvas id="journeyChart"></canvas></div>
+    </section>
+
+    <section class="panel">
       <h2>Strategy board — 2Y challenge tallies</h2>
       <p class="hint" id="rubric"></p>
       <div style="overflow-x:auto">
@@ -744,6 +756,203 @@
         if (b) drawFocus(b.dataset.k);
       };
       drawFocus("6M");
+
+      // Challenge journey: P1 (+10%) → reset → P2 (+5%) → reset → funded
+      const journeyPack = data.challenge_journeys || {};
+      const journeyById = journeyPack.by_id || {};
+      const journeyIds = (journeyPack.ids || []).filter((id) => journeyById[id]);
+      const journeyTabs = document.getElementById("journeyTabs");
+      const journeyBadges = document.getElementById("journeyBadges");
+      const journeyHint = document.getElementById("journeyHint");
+      if (journeyHint && journeyPack.note) journeyHint.textContent = journeyPack.note;
+
+      const statusLabel = (st) => ({
+        full_funded: "Cleared P1+P2 · funded profits tracked",
+        fail_phase1: "Failed Phase 1",
+        fail_phase2: "Failed Phase 2",
+        fail_funded: "Cleared challenge · died funded",
+        timeout_phase1: "Timed out Phase 1",
+        timeout_phase2: "Timed out Phase 2",
+        censored: "Truncated (not enough market data)",
+      }[st] || st || "—");
+
+      const drawJourney = (sid) => {
+        const j = journeyById[sid];
+        if (!j || !journeyTabs) return;
+        [...journeyTabs.querySelectorAll("button")].forEach((b) => b.classList.toggle("on", b.dataset.k === sid));
+        if (journeyBadges) {
+          const ok = j.status === "full_funded";
+          const warn = String(j.status || "").startsWith("fail") || String(j.status || "").startsWith("timeout");
+          journeyBadges.innerHTML = [
+            `<div class="badge ${ok ? "ok" : warn ? "warn" : ""}"><strong>${j.name || sid}</strong> · ${statusLabel(j.status)}</div>`,
+            `<div class="badge">Start <strong>${j.start || "—"}</strong></div>`,
+            `<div class="badge">P1 <strong>${j.phase1_days ?? 0}d</strong> → +10%</div>`,
+            `<div class="badge">P2 <strong>${j.phase2_days ?? 0}d</strong> → +5%</div>`,
+            `<div class="badge">Funded <strong>${j.funded_days ?? 0}d</strong></div>`,
+            `<div class="badge ok"><strong>Profit locked</strong> · ${usd(j.locked_profit_dollars || 0)} · trader ${usd(j.locked_trader_dollars || 0)}</div>`,
+          ].join("");
+        }
+
+        const pts = j.points || [];
+        const existing = charts.find((c) => c.canvas && c.canvas.id === "journeyChart");
+        if (existing) { existing.destroy(); charts.splice(charts.indexOf(existing), 1); }
+        const canvas = document.getElementById("journeyChart");
+        if (!canvas || !pts.length) return;
+
+        const p1End = j.phase1_days || 0;
+        const p2End = p1End + (j.phase2_days || 0);
+        const targetSeries = pts.map((p) => {
+          if (p.phase === "phase1") return j.phase1_target_dollars ?? 27500;
+          if (p.phase === "phase2") return j.phase2_target_dollars ?? 26250;
+          return null;
+        });
+        const killN = pts.filter((p) => p.kill).length;
+        const phaseBandPlugin = {
+          id: "journeyPhaseBands",
+          beforeDraw(chart) {
+            const { ctx, chartArea, scales } = chart;
+            if (!chartArea || !scales.x) return;
+            const x = scales.x;
+            const bands = [
+              { from: 0, to: p1End, color: "rgba(61,214,198,0.06)" },
+              { from: p1End, to: p2End, color: "rgba(122,162,255,0.07)" },
+              { from: p2End, to: pts.length, color: "rgba(240,163,74,0.06)" },
+            ];
+            bands.forEach((b) => {
+              if (b.to <= b.from) return;
+              const x0 = x.getPixelForValue(Math.max(0, b.from - 0.5));
+              const x1 = x.getPixelForValue(Math.min(pts.length - 1, b.to - 0.5));
+              ctx.save();
+              ctx.fillStyle = b.color;
+              ctx.fillRect(x0, chartArea.top, Math.max(0, x1 - x0), chartArea.bottom - chartArea.top);
+              ctx.restore();
+            });
+          },
+        };
+
+        charts.push(new Chart(canvas, {
+          type: "line",
+          data: {
+            labels: pts.map((p) => `D${p.day} · ${p.date}`),
+            datasets: [
+              {
+                label: "Account equity ($)",
+                data: pts.map((p) => p.equity_dollars),
+                borderColor: "#3dd6c6",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.2,
+                order: 2,
+                segment: {
+                  borderColor: (ctx) => {
+                    const p = pts[ctx.p1DataIndex];
+                    if (!p) return "#3dd6c6";
+                    if (p.phase === "phase1") return "#3dd6c6";
+                    if (p.phase === "phase2") return "#7aa2ff";
+                    return "#f0a34a";
+                  },
+                },
+              },
+              {
+                label: "Phase target ($27.5k / $26.25k)",
+                data: targetSeries,
+                borderColor: "#c4b5fd",
+                borderDash: [5, 4],
+                tension: 0,
+                pointRadius: 0,
+                borderWidth: 1.5,
+                spanGaps: false,
+                order: 3,
+              },
+              {
+                label: `Funded profit locked (${usd(j.locked_profit_dollars || 0)})`,
+                data: pts.map((p) => (p.phase === "funded" ? p.profit_tally_dollars : null)),
+                borderColor: "#f0a34a",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.2,
+                spanGaps: false,
+                order: 1,
+              },
+              {
+                label: "$20k floor",
+                data: pts.map(() => lim.max_loss_floor_dollars ?? 20000),
+                borderColor: "#f07178",
+                borderDash: [6, 4],
+                tension: 0,
+                pointRadius: 0,
+                borderWidth: 1.5,
+                order: 4,
+              },
+              {
+                label: "Phase pass / reset",
+                data: pts.map((p) => (p.event === "phase_pass" ? p.equity_dollars : null)),
+                borderColor: "#7dffb3",
+                backgroundColor: "#7dffb3",
+                showLine: false,
+                pointStyle: "circle",
+                pointRadius: pts.map((p) => (p.event === "phase_pass" ? 6 : 0)),
+                order: 0,
+              },
+              {
+                label: killN ? `Kill × (${killN})` : "Kill ×",
+                data: pts.map((p) => (p.kill ? p.equity_dollars : null)),
+                borderColor: "#f07178",
+                backgroundColor: "#f07178",
+                showLine: false,
+                pointStyle: "crossRot",
+                pointRadius: pts.map((p) => (p.kill ? 8 : 0)),
+                pointBorderWidth: 2,
+                order: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: `P1 ${j.phase1_days || 0}d · P2 ${j.phase2_days || 0}d · Funded ${j.funded_days || 0}d · locked ${usd(j.locked_profit_dollars || 0)}`,
+                color: killN ? "#f07178" : "#8aa397",
+                font: { size: 12 },
+              },
+              legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 10 } } },
+              tooltip: {
+                callbacks: {
+                  afterLabel(ctx) {
+                    const p = pts[ctx.dataIndex];
+                    if (!p) return "";
+                    const bits = [`phase: ${p.phase}`];
+                    if (p.event) bits.push(`event: ${p.event}`);
+                    return bits.join(" · ");
+                  },
+                },
+              },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 10 }, grid: { color: "#24352f" } },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
+            },
+          },
+          plugins: [phaseBandPlugin],
+        }));
+      };
+
+      if (journeyTabs && journeyIds.length) {
+        journeyTabs.innerHTML = journeyIds.map((id) => {
+          const j = journeyById[id];
+          const label = (j && j.name) || id;
+          return `<button type="button" data-k="${id}">${label}</button>`;
+        }).join("");
+        journeyTabs.onclick = (e) => {
+          const b = e.target.closest("button");
+          if (b) drawJourney(b.dataset.k);
+        };
+        drawJourney(journeyPack.default_id && journeyById[journeyPack.default_id]
+          ? journeyPack.default_id
+          : journeyIds[0]);
+      }
 
       // Overlay top 5 on 6M — red × marks any $1,250 daily-loss kill day
       const top5 = strat.slice(0, 5);
