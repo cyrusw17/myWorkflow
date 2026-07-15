@@ -92,7 +92,8 @@
       Multi-asset quant bakeoff under classic <strong>FTMO 2-Step</strong> rules
       (Phase1 +10%, Phase2 +5%, daily −5%, static −10%).
       Strategies cover FX, index CFDs, metals, crypto, and stock CFDs.
-      Ranked fail-first: least breaches, then pass rate, then consistent return — with 2Y / 6M / 3M / 1M focus.
+      Ranked fail-first for the challenge, then <strong>paycheck discipline</strong> once funded:
+      we assume regular payouts — a breach only burns unpaid open profit, not a tall stacked tower.
     </p>
 
     <div class="row" id="badges"></div>
@@ -129,6 +130,10 @@
               <th>Sharpe</th>
               <th>CAGR</th>
               <th>MaxDD</th>
+              <th>Locked pay</th>
+              <th>Fund breach</th>
+              <th>Unpaid lost</th>
+              <th>vs hoard lost</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -215,7 +220,7 @@
       document.getElementById("champions").innerHTML = [
         card("Overall winner", `<p><strong style="color:var(--ink)">${ch.overall?.name || "—"}</strong></p><p>${ch.overall?.why || ""}</p>`),
         card("Least failures", `<p><strong style="color:var(--ink)">${ch.least_fails?.name || "—"}</strong></p><p>Fail rate ${pct(ch.least_fails?.fail_rate)} · ${ch.least_fails?.fails || 0} fails / ${ch.least_fails?.attempts || 0} scored attempts</p>`),
-        card("Best return profile", `<p><strong style="color:var(--ink)">${ch.best_return?.name || "—"}</strong></p><p>Return score ${num(ch.best_return?.return_score, 3)} · Sharpe ${num(ch.best_return?.sharpe)} · CAGR ${pct(ch.best_return?.cagr)}</p>`),
+        card("Best paycheck (funded)", `<p><strong style="color:var(--ink)">${ch.best_paycheck?.name || "—"}</strong></p><p>Avg locked trader payout ${pct(ch.best_paycheck?.avg_locked_trader)} · funded breach ${pct(ch.best_paycheck?.fund_breach_rate)}</p><p>Unpaid lost if paying out ${pct(ch.best_paycheck?.avg_unpaid_lost)} vs hoarding ${pct(ch.best_paycheck?.hoard_unpaid_lost)}</p><p>${ch.best_paycheck?.note || ""}</p>`),
         card("Most room to improve", `<p><strong style="color:var(--ink)">${ch.most_room_to_improve?.name || "—"}</strong></p><p>Improvement ${num(ch.most_room_to_improve?.improvement_room, 3)}</p><p>${ch.most_room_to_improve?.note || ""}</p>`),
       ].join("");
 
@@ -235,6 +240,10 @@
           <td class="num">${num(m.sharpe)}</td>
           <td class="num">${pct(m.cagr)}</td>
           <td class="num ${Math.abs(m.max_dd) > 0.1 ? "down" : ""}">${pct(m.max_dd)}</td>
+          <td class="num up">${pct(s.full_2y.funded_payout?.avg_locked_trader)}</td>
+          <td class="num ${(s.full_2y.funded_payout?.breach_rate || 0) > 0.1 ? "down" : "up"}">${pct(s.full_2y.funded_payout?.breach_rate)}</td>
+          <td class="num">${pct(s.full_2y.funded_payout?.avg_unpaid_lost)}</td>
+          <td class="num">${pct(s.full_2y.funded_hoard?.avg_unpaid_lost)}</td>
         </tr>`;
       }).join("");
 
@@ -266,6 +275,11 @@
           <p>${(strat.find(s => s.id === pb.recommended) || top || {}).thesis || ""}</p>
         </div>
         <div class="box">
+          <h3>Pay-yourself-out ops</h3>
+          <ul class="checklist">${(pb.payout_ops || []).map(x => `<li>${x}</li>`).join("")}</ul>
+          <p style="margin-top:0.5rem">Policy: every ${data.payout_policy?.every_n_trading_days ?? 10}d when ≥${pct(data.payout_policy?.min_open_profit)} open · keep ${pct(data.payout_policy?.keep_buffer)} buffer · ${pct(data.payout_policy?.trader_split)} trader split</p>
+        </div>
+        <div class="box">
           <h3>Challenge ops</h3>
           <ul class="checklist">${(pb.challenge_ops || []).map(x => `<li>${x}</li>`).join("")}</ul>
         </div>
@@ -277,6 +291,7 @@
           <h3>Rules modeled</h3>
           <p>P1 ${pct(rules.phase1_target)} · P2 ${pct(rules.phase2_target)} · Daily ${pct(rules.daily_loss)} · Max static ${pct(rules.max_loss_static)}</p>
           <p>Sim caps: P1 ≤ ${rules.sim_max_days_phase1}d · P2 ≤ ${rules.sim_max_days_phase2}d · attempt every ${rules.attempt_step_days}d</p>
+          <p>${data.payout_policy?.assumption || ""}</p>
         </div>
       `;
 

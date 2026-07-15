@@ -19,7 +19,15 @@ import numpy as np
 import pandas as pd
 
 from src.data import load_universe
-from src.ftmo_rules import FtmoRules, rolling_challenges, summarize_attempts, simulate_challenge
+from src.ftmo_rules import (
+    FtmoRules,
+    PayoutPolicy,
+    rolling_challenges,
+    rolling_funded,
+    summarize_attempts,
+    summarize_funded,
+    simulate_challenge,
+)
 from src.ftmo_strategies import FTMO_TICKERS, STRATEGY_BUILDERS, STRATEGY_META
 from src.metrics import equity_from_returns, summarize
 
@@ -31,6 +39,10 @@ OUT = SITE_DATA / "ftmo_lab.json"
 START = "2023-07-01"
 RULES = FtmoRules()
 ATTEMPT_STEP = 5
+# Assumed living policy once funded: pay yourself out often so a breach
+# only burns unpaid open profit, not a tall stacked PnL tower.
+PAYOUT = PayoutPolicy(every_n_days=10, min_profit=0.01, keep_buffer=0.005, trader_split=0.80, max_days=252)
+FUNDED_STEP = 10
 
 
 def _curve(rets: pd.Series, step: int = 1) -> list[dict]:
@@ -50,12 +62,12 @@ def _slice_rets(rets: pd.Series, end: pd.Timestamp, calendar_days: int | None) -
     return rets.loc[(rets.index >= start) & (rets.index <= end)]
 
 
-def score_strategy(chal: dict, metrics: dict, recent: dict) -> dict:
+def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard: dict) -> dict:
     """
-    Composite for FTMO goals (fail-first):
-      1) Fail least often
-      2) Still pass (not endless timeout)
-      3) Consistent return
+    Composite for FTMO goals (fail-first + paycheck discipline):
+      1) Fail least often (challenge + funded breach)
+      2) Still pass challenge
+      3) Lock consistent payouts (breach must not eat the stack)
       4) Room to improve = safe but not maxed return
     """
     fail_rate = float(chal["fail_rate"]) if "fail_rate" in chal else 1.0
@@ -69,7 +81,6 @@ def score_strategy(chal: dict, metrics: dict, recent: dict) -> dict:
     mdd = abs(float(metrics.get("max_dd") or 0.0))
     sortino = float(metrics.get("sortino") or 0.0)
 
-    # Recent windows: ignore empty (all-censored) windows so they don't zero the score
     recent_used = []
     for w in ("6M", "3M", "1M"):
         ch = recent[w]["chal"]
@@ -85,49 +96,76 @@ def score_strategy(chal: dict, metrics: dict, recent: dict) -> dict:
 
     continuous_ok = mdd <= 0.12
 
-    # Fail-first survival — a 0% fail / decent pass book beats a high-pass / high-fail book
+    fund_breach = float(funded.get("breach_rate") or 0.0)
+    locked = float(funded.get("avg_locked_trader") or 0.0)
+    lost = float(funded.get("avg_unpaid_lost") or 0.0)
+    pay_hit = float(funded.get("payout_hit_rate") or 0.0)
+    n_pay = float(funded.get("avg_n_payouts") or 0.0)
+    net = float(funded.get("net_kept_vs_lost") or 0.0)
+    hoard_lost = float(hoard.get("avg_unpaid_lost") or 0.0)
+    payout_edge = max(0.0, hoard_lost - lost)
+
     survival = (
-        0.40 * (1.0 - fail_rate)
-        + 0.18 * pass_rate
-        + 0.10 * p1_rate
-        + 0.14 * (1.0 - r_fail)
-        + 0.08 * r_pass
-        + 0.06 * min(max(room_score, 0.0), 0.15) / 0.15
+        0.32 * (1.0 - fail_rate)
+        + 0.14 * (1.0 - fund_breach)
+        + 0.14 * pass_rate
+        + 0.08 * p1_rate
+        + 0.10 * (1.0 - r_fail)
+        + 0.06 * r_pass
+        + 0.05 * min(max(room_score, 0.0), 0.15) / 0.15
         + 0.04 * min(max(sharpe, -1.0), 2.5) / 2.5
+        + 0.07 * min(pay_hit, 1.0)
     )
 
     ret_util = min(max(cagr, 0.0), 0.25) / 0.25
-    # Only credit "room to improve" when the book is actually safe
-    safety_gate = max(0.0, 1.0 - fail_rate / 0.20)  # zero credit above 20% fail
+    safety_gate = max(0.0, 1.0 - fail_rate / 0.20)
     improvement_room = safety_gate * (
-        0.40 * (1.0 - fail_rate)
-        + 0.25 * min(max(pass_rate, 0.0), 1.0)
-        + 0.20 * min(max(room_score, 0.0), 0.15) / 0.15
-        + 0.15 * (1.0 - ret_util)
+        0.35 * (1.0 - fail_rate)
+        + 0.20 * (1.0 - fund_breach)
+        + 0.20 * min(max(pass_rate, 0.0), 1.0)
+        + 0.15 * min(max(room_score, 0.0), 0.15) / 0.15
+        + 0.10 * (1.0 - ret_util)
     )
 
     return_score = (
-        0.32 * min(max(sharpe, -1.0), 3.0) / 3.0
-        + 0.22 * min(max(sortino, -1.0), 3.0) / 3.0
-        + 0.18 * min(max(r_ret, -0.2), 0.4) / 0.4
-        + 0.12 * min(max(cagr, -0.2), 0.4) / 0.4
-        + 0.10 * pass_rate
+        0.22 * min(max(sharpe, -1.0), 3.0) / 3.0
+        + 0.14 * min(max(sortino, -1.0), 3.0) / 3.0
+        + 0.12 * min(max(r_ret, -0.2), 0.4) / 0.4
+        + 0.08 * min(max(cagr, -0.2), 0.4) / 0.4
+        + 0.08 * pass_rate
         + 0.06 * (1.0 - fail_rate)
+        + 0.18 * min(max(locked, 0.0), 0.25) / 0.25
+        + 0.08 * min(max(net, -0.05), 0.25) / 0.25
+        + 0.04 * min(n_pay / 12.0, 1.0)
     )
 
-    composite = 0.60 * survival + 0.25 * return_score + 0.15 * improvement_room
+    payout_score = (
+        0.35 * min(max(locked, 0.0), 0.25) / 0.25
+        + 0.20 * (1.0 - fund_breach)
+        + 0.15 * pay_hit
+        + 0.15 * min(max(payout_edge, 0.0), 0.15) / 0.15
+        + 0.10 * (1.0 - min(lost / 0.05, 1.0))
+        + 0.05 * min(n_pay / 12.0, 1.0)
+    )
+
+    composite = (
+        0.45 * survival
+        + 0.25 * payout_score
+        + 0.20 * return_score
+        + 0.10 * improvement_room
+    )
     if not continuous_ok:
         composite -= 0.12
     if fail_rate > 0.20:
         composite -= 0.15
     if fail_rate > 0.35:
         composite -= 0.10
-    # Tiny pass rate with many timeouts is not a winning challenge plan
+    if fund_breach > 0.25:
+        composite -= 0.08
     if pass_rate < 0.05:
         composite -= 0.08
     if pass_rate < 0.05 and fail_rate < 0.05:
         composite -= 0.04
-    # Penalize books that never clear Phase 1 even if "safe"
     if p1_rate < 0.10:
         composite -= 0.06
 
@@ -135,11 +173,16 @@ def score_strategy(chal: dict, metrics: dict, recent: dict) -> dict:
         "survival_score": round(float(survival), 4),
         "return_score": round(float(return_score), 4),
         "improvement_room": round(float(improvement_room), 4),
+        "payout_score": round(float(payout_score), 4),
         "composite": round(float(composite), 4),
         "recent_pass_avg": round(float(r_pass), 4),
         "recent_fail_avg": round(float(r_fail), 4),
         "recent_sharpe_avg": round(float(r_sharpe), 4),
         "continuous_dd_ok": continuous_ok,
+        "avg_locked_trader": round(locked, 4),
+        "avg_unpaid_lost": round(lost, 4),
+        "fund_breach_rate": round(fund_breach, 4),
+        "payout_edge_vs_hoard": round(float(payout_edge), 4),
     }
 
 
@@ -251,9 +294,18 @@ def run() -> dict:
             recent[wname] = evaluate_window(sliced, f"{sid}:{wname}")
 
         full = recent["2Y"]
-        scores = score_strategy(full["chal"], full["metrics"], recent)
+        # Funded phase: assume we pay ourselves out every ~10 trading days (≥1% open profit).
+        # Breach burns only unpaid open PnL; locked withdrawals survive.
+        funded_paths = rolling_funded(
+            rets, step=FUNDED_STEP, rules=RULES, policy=PAYOUT, min_remaining=40, mode="payout"
+        )
+        hoard_paths = rolling_funded(
+            rets, step=FUNDED_STEP, rules=RULES, policy=PAYOUT, min_remaining=40, mode="hoard"
+        )
+        funded = summarize_funded(funded_paths)
+        hoard = summarize_funded(hoard_paths)
+        scores = score_strategy(full["chal"], full["metrics"], recent, funded, hoard)
 
-        # Improvement narrative
         headroom = full["chal"].get("avg_room_on_pass")
         fail_n = full["chal"]["fails"]
         row = {
@@ -266,6 +318,8 @@ def run() -> dict:
             "full_2y": {
                 "metrics": full["metrics"],
                 "challenge": full["chal"],
+                "funded_payout": funded,
+                "funded_hoard": hoard,
             },
             "windows": {
                 w: {
@@ -287,7 +341,9 @@ def run() -> dict:
         curves[f"{sid}__6m"] = _curve(_slice_rets(rets, end, 183), step=1)
         print(
             f"    2Y pass={full['chal']['full_pass_rate']:.1%} fail={full['chal']['fail_rate']:.1%} "
-            f"Sharpe={full['metrics']['sharpe']:.2f} composite={scores['composite']:.3f}"
+            f"fundBreach={funded['breach_rate']:.1%} locked={funded['avg_locked_trader']:.1%} "
+            f"lostOpen={funded['avg_unpaid_lost']:.2%} Sharpe={full['metrics']['sharpe']:.2f} "
+            f"composite={scores['composite']:.3f}"
         )
 
     rows.sort(key=lambda r: r["scores"]["composite"], reverse=True)
@@ -319,6 +375,17 @@ def run() -> dict:
         and r["full_2y"]["challenge"]["full_pass_rate"] >= 0.15
     ] or safe or rows
     most_improvable = max(improvable_pool, key=lambda r: r["scores"]["improvement_room"])
+    pay_safe = [
+        r for r in rows if r["full_2y"]["funded_payout"]["breach_rate"] <= 0.05
+    ] or rows
+    best_paycheck = max(
+        pay_safe,
+        key=lambda r: (
+            r["full_2y"]["funded_payout"]["avg_locked_trader"],
+            r["scores"].get("payout_score", 0.0),
+            -r["full_2y"]["funded_payout"]["breach_rate"],
+        ),
+    )
 
     # Winner recent window curves for UI
     winner_rets = STRATEGY_BUILDERS[winner["id"]](prices).reindex(prices.index).fillna(0.0)
@@ -351,6 +418,7 @@ def run() -> dict:
                 "Phase 2 resets to a fresh 1.0 equity Verification account.",
                 "Daily loss uses closed-day PnL vs day-start balance − 5% initial (no intraday path).",
                 "Fail tallies count daily-loss and max-loss breaches; timeouts are separate (not failures).",
+                "Funded sim assumes regular payouts: unpaid open profit is lost on breach; locked withdrawals survive.",
             ],
         },
         "universe": {
@@ -367,10 +435,20 @@ def run() -> dict:
             },
         },
         "ranking_rubric": {
-            "survival": "Low fail rate + high full/phase1 pass rates (2Y + recent windows)",
-            "return": "Sharpe / Sortino / CAGR + recent total returns",
-            "improvement_room": "Safe (low fail, cushion above 90% floor) but not yet maxing return — worth iterating",
-            "composite": "0.60 survival (fail-first) + 0.25 return + 0.15 improvement",
+            "survival": "Low challenge fail + low funded breach + pass rates",
+            "payout": "Locked trader payouts under biweekly pay-yourself-out; unpaid lost on breach stays small",
+            "return": "Sharpe / Sortino / CAGR + locked paycheck yield",
+            "improvement_room": "Safe but not maxed — worth carefully leveraging",
+            "composite": "0.45 survival + 0.25 payout + 0.20 return + 0.10 improvement",
+        },
+        "payout_policy": {
+            "assumption": "Once funded we fairly consistently pay ourselves out — a breach must not vaporize a tall unpaid stack.",
+            "every_n_trading_days": PAYOUT.every_n_days,
+            "min_open_profit": PAYOUT.min_profit,
+            "keep_buffer": PAYOUT.keep_buffer,
+            "trader_split": PAYOUT.trader_split,
+            "funded_horizon_days": PAYOUT.max_days,
+            "contrast": "Hoard mode never withdraws until end/breach — shows how much unpaid PnL a breach would erase.",
         },
         "champions": {
             "overall": {
@@ -403,6 +481,16 @@ def run() -> dict:
                 "improvement_room": most_improvable["scores"]["improvement_room"],
                 "note": "Highest safety cushion relative to extracted return — best candidate to carefully lever up.",
             },
+            "best_paycheck": {
+                "id": best_paycheck["id"],
+                "name": best_paycheck["name"],
+                "payout_score": best_paycheck["scores"].get("payout_score"),
+                "avg_locked_trader": best_paycheck["full_2y"]["funded_payout"]["avg_locked_trader"],
+                "fund_breach_rate": best_paycheck["full_2y"]["funded_payout"]["breach_rate"],
+                "avg_unpaid_lost": best_paycheck["full_2y"]["funded_payout"]["avg_unpaid_lost"],
+                "hoard_unpaid_lost": best_paycheck["full_2y"]["funded_hoard"]["avg_unpaid_lost"],
+                "note": "Best locked payout stream under the pay-yourself-out policy (80% trader split).",
+            },
         },
         "strategies": rows,
         "winner_focus_curves": focus_curves,
@@ -418,8 +506,17 @@ def run() -> dict:
                 "After a −1% day, cut exposure (agent brake) rather than revenge-trading.",
                 "Prefer static 2-Step over 1-Step trailing DD for these books.",
             ],
+            "payout_ops": [
+                "Once funded: request payouts on a fixed cadence (modeled every ~10 trading days when ≥1% open).",
+                "Never treat unpaid account equity as real money — only locked withdrawals count.",
+                "Leave a thin buffer (~0.5%) after payout so the next day is not sitting on the knife edge.",
+                "Know the tradeoff: withdrawing removes static-DD cushion (floor stays at 90% of initial) — size down after a big paycheck.",
+                "If a week is red, skip the paycheck rather than forcing size to 'make the withdrawal'.",
+                "Hoarding for a big month is how a single daily-loss breach deletes weeks of unpaid work.",
+                "Target many small paychecks over one heroic unpaid run-up.",
+            ],
             "improvement_levers": [
-                "Raise vol target slowly (0.5% increments) only while rolling fail rate stays <10%.",
+                "Raise vol target slowly (0.5% increments) only while rolling fail rate stays <10% AND funded breach stays near 0.",
                 "Add session filters (skip high-impact USD news windows) before increasing size.",
                 "Walk-forward re-fit lookbacks quarterly; freeze during a live challenge.",
             ],
@@ -449,6 +546,13 @@ def run() -> dict:
         "Most improvable:",
         most_improvable["name"],
         f"room={most_improvable['scores']['improvement_room']:.3f}",
+    )
+    print(
+        "Best paycheck:",
+        best_paycheck["name"],
+        f"locked={best_paycheck['full_2y']['funded_payout']['avg_locked_trader']:.1%}",
+        f"fundBreach={best_paycheck['full_2y']['funded_payout']['breach_rate']:.1%}",
+        f"hoardLost={best_paycheck['full_2y']['funded_hoard']['avg_unpaid_lost']:.1%}",
     )
     return payload
 
