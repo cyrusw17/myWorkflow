@@ -152,7 +152,8 @@
       <p class="hint">
         Red line = <strong>90% equity floor</strong> (10% max loss from initial).
         Orange dashed = <strong>−5% daily loss</strong> reference on the daily chart.
-        If equity touches the floor or a closed day ≤ −5% vs day-start, the account fails.
+        If equity touches the floor or a closed day loses ≥5% of initial from day-start, the account fails.
+        <strong style="color:var(--bad)">Red ×</strong> marks every simulated <strong>5% daily-loss kill day</strong>.
       </p>
       <div class="meters" id="headroomMeters"></div>
       <div class="tabs" id="riskTabs" style="margin-top:0.9rem"></div>
@@ -176,7 +177,7 @@
 
     <section class="panel">
       <h2>Winner equity — focus windows</h2>
-      <p class="hint">Rebased curves for the overall winner. Toggle horizon — 6M / 3M / 1M get emphasis for current regime.</p>
+      <p class="hint">Rebased curves for the overall winner. Toggle horizon — 6M / 3M / 1M get emphasis for current regime. <strong style="color:var(--bad)">Red ×</strong> = 5% daily-loss kill day.</p>
       <div class="tabs" id="focusTabs"></div>
       <div class="chart-box"><canvas id="focusChart"></canvas></div>
     </section>
@@ -339,6 +340,7 @@
                 pointRadius: 0,
                 borderWidth: 2.2,
                 fill: false,
+                order: 2,
               },
               {
                 label: "10% max-loss floor (0.90)",
@@ -349,6 +351,18 @@
                 pointRadius: 0,
                 borderWidth: 2,
                 fill: false,
+                order: 3,
+              },
+              {
+                label: `5% daily-loss KILL (${path.daily_kill_count || 0})`,
+                data: (path.daily_kill || []).map((k, i) => (k ? path.equity[i] : null)),
+                borderColor: "#f07178",
+                backgroundColor: "#f07178",
+                showLine: false,
+                pointStyle: "crossRot",
+                pointRadius: (path.daily_kill || []).map((k) => (k ? 7 : 0)),
+                pointBorderWidth: 2,
+                order: 0,
               },
             ],
           },
@@ -356,7 +370,14 @@
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              title: { display: true, text: `Equity vs static 10% floor · ${key}`, color: "#8aa397", font: { size: 12 } },
+              title: {
+                display: true,
+                text: (path.daily_kill_count || 0)
+                  ? `Equity vs 10% floor · ${key} · ${path.daily_kill_count} daily-loss kill day(s)`
+                  : `Equity vs static 10% floor · ${key} · no 5% daily kills`,
+                color: (path.daily_kill_count || 0) ? "#f07178" : "#8aa397",
+                font: { size: 12 },
+              },
               legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 11 } } },
             },
             scales: {
@@ -380,7 +401,11 @@
                 data: path.daily,
                 borderColor: "#7aa2ff",
                 tension: 0.05,
-                pointRadius: 0,
+                pointRadius: (path.daily_kill || []).map((k) => (k ? 5 : 0)),
+                pointStyle: "crossRot",
+                pointBorderColor: "#f07178",
+                pointBackgroundColor: "#f07178",
+                pointBorderWidth: 2,
                 borderWidth: 1.4,
               },
               {
@@ -575,6 +600,7 @@
         focusKey = key;
         [...tabs.querySelectorAll("button")].forEach((b) => b.classList.toggle("on", b.dataset.k === key));
         const series = focus[key] || [];
+        const killN = series.filter((p) => p.daily_kill).length;
         const existing = charts.find(c => c.canvas.id === "focusChart");
         if (existing) { existing.destroy(); charts.splice(charts.indexOf(existing), 1); }
         charts.push(new Chart(document.getElementById("focusChart"), {
@@ -589,6 +615,7 @@
                 tension: 0.05,
                 pointRadius: 0,
                 borderWidth: 2,
+                order: 2,
               },
               {
                 label: "10% max-loss floor (0.90)",
@@ -598,13 +625,35 @@
                 tension: 0,
                 pointRadius: 0,
                 borderWidth: 1.8,
+                order: 3,
+              },
+              {
+                label: `5% daily-loss KILL (${killN})`,
+                data: series.map((p) => (p.daily_kill ? p.equity : null)),
+                borderColor: "#f07178",
+                backgroundColor: "#f07178",
+                showLine: false,
+                pointStyle: "crossRot",
+                pointRadius: series.map((p) => (p.daily_kill ? 7 : 0)),
+                pointBorderWidth: 2,
+                order: 0,
               },
             ],
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { labels: { color: "#8aa397" } } },
+            plugins: {
+              title: {
+                display: true,
+                text: killN
+                  ? `${killN} day(s) would have killed the account on the 5% daily-loss rule`
+                  : "No 5% daily-loss kill days in this window",
+                color: killN ? "#f07178" : "#8aa397",
+                font: { size: 12 },
+              },
+              legend: { labels: { color: "#8aa397" } },
+            },
             scales: {
               x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
               y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
