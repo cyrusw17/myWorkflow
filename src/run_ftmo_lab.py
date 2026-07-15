@@ -263,6 +263,99 @@ def evaluate_window(rets: pd.Series, label: str) -> dict:
     }
 
 
+
+def build_risk_visuals(rets: pd.Series, strategies: list[dict], rules: FtmoRules) -> dict:
+    """Packaged visuals for the 5% daily / 10% max-loss envelope on Pages."""
+    r = rets.fillna(0.0)
+    eq = equity_from_returns(r)
+    daily = r.astype(float)
+    worst_day = float(daily.min()) if len(daily) else 0.0
+    best_day = float(daily.max()) if len(daily) else 0.0
+    # Headroom to daily limit using closed-day PnL (proxy)
+    daily_headroom = rules.daily_loss + worst_day  # positive = still under limit
+    min_eq = float(eq.min()) if len(eq) else 1.0
+    max_floor = 1.0 - rules.max_loss
+    max_headroom = min_eq - max_floor
+
+    # Dense path for charting (6M emphasis + 2Y)
+    def path_pack(series: pd.Series, step: int = 1) -> dict:
+        s = series.fillna(0.0)
+        e = equity_from_returns(s)
+        if step > 1 and len(e) > step * 2:
+            idxs = list(range(0, len(e), step))
+            if idxs[-1] != len(e) - 1:
+                idxs.append(len(e) - 1)
+            e = e.iloc[idxs]
+            s = s.reindex(e.index).fillna(0.0)
+        return {
+            "dates": [dt.strftime("%Y-%m-%d") for dt in e.index],
+            "equity": [round(float(v), 6) for v in e.values],
+            "daily": [round(float(v), 6) for v in s.values],
+            "max_loss_floor": [round(max_floor, 6)] * len(e),
+            "daily_loss_limit": [-rules.daily_loss] * len(e),
+            "daily_gain_ref": [rules.daily_loss] * len(e),
+        }
+
+    end = r.index[-1]
+    # Breach board for bar chart
+    breach_board = []
+    for s in strategies:
+        c = s["full_2y"]["challenge"]
+        m = s["full_2y"]["metrics"]
+        breach_board.append({
+            "id": s["id"],
+            "name": s["name"],
+            "rank": s["rank"],
+            "fail_daily": c["fail_daily"],
+            "fail_max": c["fail_max"],
+            "fails": c["fails"],
+            "attempts": c["n_attempts"],
+            "fail_rate": c["fail_rate"],
+            "max_dd": m["max_dd"],
+            "min_equity_phase1": c.get("avg_min_equity_phase1"),
+            "room_to_floor": (c.get("avg_min_equity_phase1") or 1.0) - max_floor if c.get("avg_min_equity_phase1") is not None else None,
+            "cleared_max_dd_gate": abs(float(m.get("max_dd") or 0.0)) < rules.max_loss,
+        })
+
+    # Histogram of daily returns for winner (bins)
+    bins = np.linspace(-0.06, 0.06, 25)
+    hist, edges = np.histogram(daily.clip(-0.06, 0.06), bins=bins)
+    hist_pack = {
+        "centers": [round(float((edges[i] + edges[i + 1]) / 2), 5) for i in range(len(hist))],
+        "counts": [int(x) for x in hist],
+        "daily_limit": -rules.daily_loss,
+    }
+
+    return {
+        "limits": {
+            "daily_loss": rules.daily_loss,
+            "max_loss": rules.max_loss,
+            "max_loss_floor": max_floor,
+            "phase1_target": rules.phase1_target,
+            "phase2_target": rules.phase2_target,
+        },
+        "winner_envelope": {
+            "worst_day": worst_day,
+            "best_day": best_day,
+            "daily_headroom": daily_headroom,
+            "min_equity": min_eq,
+            "max_headroom": max_headroom,
+            "max_dd": float(eq.iloc[-1] / eq.cummax().iloc[-1] - 1) if len(eq) else 0.0,  # unused; real max_dd below
+            "path_max_dd": float((eq / eq.cummax() - 1.0).min()) if len(eq) else 0.0,
+            "pct_days_worse_than_2pct": float((daily <= -0.02).mean()) if len(daily) else 0.0,
+            "pct_days_worse_than_3pct": float((daily <= -0.03).mean()) if len(daily) else 0.0,
+            "days_within_1pct_of_daily_limit": int(((daily <= -0.04) & (daily > -0.05)).sum()),
+            "days_at_or_over_daily_limit": int((daily <= -rules.daily_loss).sum()),
+            "cleared_daily_limit": bool(worst_day > -rules.daily_loss + 1e-12),
+            "cleared_max_floor": bool(min_eq > max_floor + 1e-12),
+        },
+        "winner_path_2y": path_pack(r, step=3),
+        "winner_path_6m": path_pack(r.loc[r.index >= end - pd.Timedelta(days=183)], step=1),
+        "daily_hist": hist_pack,
+        "breach_board": breach_board,
+    }
+
+
 def run() -> dict:
     SITE_DATA.mkdir(parents=True, exist_ok=True)
     print(f"Loading FTMO proxy universe ({len(FTMO_TICKERS)} tickers) from {START}…")
@@ -395,6 +488,7 @@ def run() -> dict:
         "3M": _curve(_slice_rets(winner_rets, end, 92), step=1),
         "1M": _curve(_slice_rets(winner_rets, end, 31), step=1),
     }
+    risk_visuals = build_risk_visuals(winner_rets, rows, RULES)
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -494,6 +588,7 @@ def run() -> dict:
         },
         "strategies": rows,
         "winner_focus_curves": focus_curves,
+        "risk_visuals": risk_visuals,
         "curves": {r["id"]: curves[r["id"]] for r in rows},
         "curves_6m": {r["id"]: curves[f"{r['id']}__6m"] for r in rows},
         "playbook": {
