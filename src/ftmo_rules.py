@@ -276,6 +276,410 @@ def rolling_challenges(
     return out
 
 
+@dataclass
+class ChallengeJourney:
+    """
+    Continuous P1 → reset → P2 → reset → funded path for graphing.
+
+    Challenge phases keep equity in-account (no mid-phase withdraw).
+    On each phase pass the book resets to 1.0. Funded phase locks closed
+    excess above initial under walk_daily_withdraw rules.
+    """
+
+    status: str  # full_funded | fail_phase1 | fail_phase2 | timeout_phase1 | timeout_phase2 | fail_funded | censored
+    start: str
+    points: list[dict]
+    markers: list[dict]
+    phase1_days: int
+    phase2_days: int
+    funded_days: int
+    locked_profit: float
+    end_equity: float
+    fail_reason: str | None
+
+
+def walk_challenge_to_funded(
+    rets: pd.Series,
+    start_idx: int = 0,
+    rules: FtmoRules | None = None,
+    *,
+    max_funded_days: int = 252,
+) -> ChallengeJourney:
+    """
+    Walk one continuous journey: Phase 1 (+10%) → reset → Phase 2 (+5%) →
+    reset → funded (closed excess ≥ $25k withdrawable).
+
+    Points are EOD marks with phase labels for Charts.js. Equity drops to 1.0
+    at each phase reset; locked_profit only grows after funded starts.
+    """
+    rules = rules or FtmoRules()
+    r = rets.fillna(0.0)
+    if start_idx >= len(r):
+        return ChallengeJourney(
+            "censored",
+            "",
+            [],
+            [],
+            0,
+            0,
+            0,
+            0.0,
+            1.0,
+            "censored",
+        )
+
+    start_ts = r.index[start_idx]
+    floor = rules.max_loss_floor
+    daily_abs = rules.daily_loss
+    points: list[dict] = []
+    markers: list[dict] = [
+        {
+            "day": 0,
+            "date": pd.Timestamp(start_ts).strftime("%Y-%m-%d"),
+            "event": "start",
+            "label": "Challenge start · Phase 1 (+10%)",
+            "equity": 1.0,
+        }
+    ]
+
+    def _append(
+        *,
+        dt,
+        eq: float,
+        phase: str,
+        locked: float,
+        day_i: int,
+        event: str | None = None,
+        kill: bool = False,
+        day_start: float | None = None,
+        day_pnl: float | None = None,
+    ) -> None:
+        points.append(
+            {
+                "day": day_i,
+                "date": pd.Timestamp(dt).strftime("%Y-%m-%d"),
+                "phase": phase,
+                "equity": round(float(eq), 6),
+                "equity_dollars": round(dollars(eq, rules), 2),
+                "profit_tally": round(float(locked), 6),
+                "profit_tally_dollars": round(dollars(locked, rules), 2),
+                "total_dollars": round(dollars(eq, rules) + dollars(locked, rules), 2),
+                "target": round(
+                    1.0 + (rules.phase1_target if phase == "phase1" else rules.phase2_target if phase == "phase2" else 0.0),
+                    6,
+                )
+                if phase in ("phase1", "phase2")
+                else None,
+                "target_dollars": round(
+                    dollars(
+                        1.0
+                        + (
+                            rules.phase1_target
+                            if phase == "phase1"
+                            else rules.phase2_target
+                            if phase == "phase2"
+                            else 0.0
+                        ),
+                        rules,
+                    ),
+                    2,
+                )
+                if phase in ("phase1", "phase2")
+                else None,
+                "kill": bool(kill),
+                "event": event,
+                "day_start": round(float(day_start), 6) if day_start is not None else None,
+                "day_pnl": round(float(day_pnl), 6) if day_pnl is not None else None,
+            }
+        )
+
+    def _run_challenge_phase(
+        slice_rets: pd.Series,
+        *,
+        phase: str,
+        target: float,
+        max_days: int,
+        day_offset: int,
+    ) -> tuple[str, int, float, str | None]:
+        """Returns (status, days_consumed, end_equity, fail_reason)."""
+        eq = 1.0
+        trading_days = 0
+        last_i = -1
+        n = len(slice_rets)
+        for i, (dt, ret) in enumerate(slice_rets.items()):
+            last_i = i
+            day_start = eq
+            if float(ret) != 0.0:
+                trading_days += 1
+            gross = day_start * (1.0 + float(ret))
+            day_pnl = gross - day_start
+            daily_kill = gross < day_start - daily_abs - 1e-12
+            max_kill = gross < floor - 1e-12
+            eq = gross
+            day_i = day_offset + i + 1
+            if daily_kill or max_kill:
+                _append(
+                    dt=dt,
+                    eq=eq,
+                    phase=phase,
+                    locked=0.0,
+                    day_i=day_i,
+                    event="kill",
+                    kill=True,
+                    day_start=day_start,
+                    day_pnl=day_pnl,
+                )
+                reason = "daily_loss" if daily_kill else "max_loss"
+                return f"fail_{phase}", i + 1, eq, reason
+            hit = eq >= 1.0 + target - 1e-12 and trading_days >= rules.min_trading_days
+            _append(
+                dt=dt,
+                eq=eq,
+                phase=phase,
+                locked=0.0,
+                day_i=day_i,
+                event="phase_pass" if hit else None,
+                day_start=day_start,
+                day_pnl=day_pnl,
+            )
+            if hit:
+                return "pass", i + 1, eq, None
+            if i + 1 >= max_days:
+                return "timeout", i + 1, eq, "timeout"
+        days = last_i + 1 if last_i >= 0 else 0
+        if days < max_days and days >= n:
+            return "censored", days, eq, "censored"
+        return "timeout", days, eq, "timeout"
+
+    # ——— Phase 1 ———
+    p1_slice = r.iloc[start_idx:]
+    p1_status, p1_days, p1_eq, p1_fail = _run_challenge_phase(
+        p1_slice,
+        phase="phase1",
+        target=rules.phase1_target,
+        max_days=rules.max_days_phase1,
+        day_offset=0,
+    )
+    if p1_status != "pass":
+        status = {
+            "fail_phase1": "fail_phase1",
+            "timeout": "timeout_phase1",
+            "censored": "censored",
+        }.get(p1_status, "fail_phase1")
+        return ChallengeJourney(
+            status,
+            str(pd.Timestamp(start_ts).date()),
+            points,
+            markers,
+            p1_days,
+            0,
+            0,
+            0.0,
+            float(p1_eq),
+            p1_fail,
+        )
+
+    markers.append(
+        {
+            "day": p1_days,
+            "date": points[-1]["date"],
+            "event": "pass_phase1",
+            "label": f"Phase 1 passed (+{rules.phase1_target:.0%}) · reset → Phase 2",
+            "equity": round(float(p1_eq), 6),
+        }
+    )
+    # Visible reset tick before Phase 2 begins (same calendar day end / next start)
+    markers.append(
+        {
+            "day": p1_days,
+            "date": points[-1]["date"],
+            "event": "reset_phase2",
+            "label": "Reset to $25k · Phase 2 (+5%)",
+            "equity": 1.0,
+        }
+    )
+
+    # ——— Phase 2 ———
+    p2_start = start_idx + p1_days
+    p2_slice = r.iloc[p2_start:]
+    if p2_slice.empty:
+        return ChallengeJourney(
+            "censored",
+            str(pd.Timestamp(start_ts).date()),
+            points,
+            markers,
+            p1_days,
+            0,
+            0,
+            0.0,
+            1.0,
+            "censored",
+        )
+
+    p2_status, p2_days, p2_eq, p2_fail = _run_challenge_phase(
+        p2_slice,
+        phase="phase2",
+        target=rules.phase2_target,
+        max_days=rules.max_days_phase2,
+        day_offset=p1_days,
+    )
+    if p2_status != "pass":
+        status = {
+            "fail_phase2": "fail_phase2",
+            "timeout": "timeout_phase2",
+            "censored": "censored",
+        }.get(p2_status, "fail_phase2")
+        return ChallengeJourney(
+            status,
+            str(pd.Timestamp(start_ts).date()),
+            points,
+            markers,
+            p1_days,
+            p2_days,
+            0,
+            0.0,
+            float(p2_eq),
+            p2_fail,
+        )
+
+    markers.append(
+        {
+            "day": p1_days + p2_days,
+            "date": points[-1]["date"],
+            "event": "pass_phase2",
+            "label": f"Phase 2 passed (+{rules.phase2_target:.0%}) · reset → Funded",
+            "equity": round(float(p2_eq), 6),
+        }
+    )
+    markers.append(
+        {
+            "day": p1_days + p2_days,
+            "date": points[-1]["date"],
+            "event": "funded_start",
+            "label": "Official funded · withdraw closed excess ≥ $25k",
+            "equity": 1.0,
+        }
+    )
+
+    # ——— Funded (closed-above-initial withdraw) ———
+    funded_start = p2_start + p2_days
+    funded_slice = r.iloc[funded_start : funded_start + max_funded_days]
+    eq = 1.0
+    locked = 0.0
+    funded_days = 0
+    status = "full_funded"
+    fail_reason = None
+
+    if funded_slice.empty:
+        return ChallengeJourney(
+            "censored",
+            str(pd.Timestamp(start_ts).date()),
+            points,
+            markers,
+            p1_days,
+            p2_days,
+            0,
+            0.0,
+            1.0,
+            "censored",
+        )
+
+    for i, (dt, ret) in enumerate(funded_slice.items()):
+        day_start = eq
+        gross = day_start * (1.0 + float(ret))
+        day_pnl = gross - day_start
+        daily_kill = gross < day_start - daily_abs - 1e-12
+        max_kill = gross < floor - 1e-12
+        day_i = p1_days + p2_days + i + 1
+        funded_days = i + 1
+
+        if daily_kill or max_kill:
+            _append(
+                dt=dt,
+                eq=gross,
+                phase="funded",
+                locked=locked,
+                day_i=day_i,
+                event="kill",
+                kill=True,
+                day_start=day_start,
+                day_pnl=day_pnl,
+            )
+            status = "fail_funded"
+            fail_reason = "daily_loss" if daily_kill else "max_loss"
+            markers.append(
+                {
+                    "day": day_i,
+                    "date": pd.Timestamp(dt).strftime("%Y-%m-%d"),
+                    "event": "kill",
+                    "label": f"Funded kill · {fail_reason}",
+                    "equity": round(float(gross), 6),
+                }
+            )
+            return ChallengeJourney(
+                status,
+                str(pd.Timestamp(start_ts).date()),
+                points,
+                markers,
+                p1_days,
+                p2_days,
+                funded_days,
+                float(locked),
+                float(gross),
+                fail_reason,
+            )
+
+        if gross > 1.0 + 1e-12:
+            withdraw = gross - 1.0
+            locked += withdraw
+            eq = 1.0
+            event = "withdraw"
+        else:
+            eq = gross
+            event = None
+
+        _append(
+            dt=dt,
+            eq=eq,
+            phase="funded",
+            locked=locked,
+            day_i=day_i,
+            event=event,
+            day_start=day_start,
+            day_pnl=day_pnl,
+        )
+
+    return ChallengeJourney(
+        status,
+        str(pd.Timestamp(start_ts).date()),
+        points,
+        markers,
+        p1_days,
+        p2_days,
+        funded_days,
+        float(locked),
+        float(eq),
+        fail_reason,
+    )
+
+
+def find_first_full_pass_start(
+    rets: pd.Series,
+    *,
+    step: int = 5,
+    rules: FtmoRules | None = None,
+    min_remaining: int = 80,
+) -> int:
+    """First start index that clears P1+P2 (falls back to 0)."""
+    rules = rules or FtmoRules()
+    n = len(rets)
+    for i in range(0, max(0, n - min_remaining), step):
+        shot = simulate_challenge(rets, i, rules)
+        if shot.status == "full_pass":
+            return i
+    return 0
+
+
 def summarize_attempts(attempts: list[ChallengeResult]) -> dict:
     # Drop data-censored attempts so short windows don't fake timeouts
     scored = [a for a in attempts if a.status != "censored"]
