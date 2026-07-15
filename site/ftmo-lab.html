@@ -222,6 +222,7 @@
               <th>Daily / Max</th>
               <th>Timeouts</th>
               <th>Avg days</th>
+              <th>Pace</th>
               <th>Sharpe</th>
               <th>CAGR</th>
               <th>MaxDD</th>
@@ -580,6 +581,7 @@
         card("Least failures", `<p><strong style="color:var(--ink)">${ch.least_fails?.name || "—"}</strong></p><p>Fail rate ${pct(ch.least_fails?.fail_rate)} · ${ch.least_fails?.fails || 0} fails / ${ch.least_fails?.attempts || 0} scored attempts</p>`),
         card("Best paycheck (funded)", `<p><strong style="color:var(--ink)">${ch.best_paycheck?.name || "—"}</strong></p><p>Avg locked trader payout ${pct(ch.best_paycheck?.avg_locked_trader)} · funded breach ${pct(ch.best_paycheck?.fund_breach_rate)}</p><p>Unpaid lost if paying out ${pct(ch.best_paycheck?.avg_unpaid_lost)} vs hoarding ${pct(ch.best_paycheck?.hoard_unpaid_lost)}</p><p>${ch.best_paycheck?.note || ""}</p>`),
         card("Most room to improve", `<p><strong style="color:var(--ink)">${ch.most_room_to_improve?.name || "—"}</strong></p><p>Improvement ${num(ch.most_room_to_improve?.improvement_room, 3)}</p><p>${ch.most_room_to_improve?.note || ""}</p>`),
+        card("Fastest challenge", `<p><strong style="color:var(--ink)">${ch.fastest_challenge?.name || "—"}</strong></p><p>Avg <strong style="color:var(--ok)">${num(ch.fastest_challenge?.avg_days_to_full_pass, 0)}</strong> trading days to clear P1+P2 (med ${num(ch.fastest_challenge?.median_days_to_full_pass, 0)}) · pass ${pct(ch.fastest_challenge?.full_pass_rate)} · fail ${pct(ch.fastest_challenge?.fail_rate)}</p><p>${ch.fastest_challenge?.note || ""}</p>`),
         card("Pass-defend · Active", `<p><strong style="color:var(--ink)">${ch.active_sibling?.active_name || "—"}</strong></p><p>Active days ${pct(ch.active_sibling?.active_active_day_rate)} vs base ${pct(ch.active_sibling?.base_active_day_rate)} · flat ${pct(ch.active_sibling?.active_flat_day_rate)} vs ${pct(ch.active_sibling?.base_flat_day_rate)}</p><p>Composite ${num(ch.active_sibling?.active_composite, 3)} (#${ch.active_sibling?.active_rank ?? "—"}) vs base ${num(ch.active_sibling?.base_composite, 3)}</p>`),
         card("RP Dual · Active", `<p><strong style="color:var(--ink)">${ch.rp_dual_sibling?.active_name || "—"}</strong></p><p>Active days ${pct(ch.rp_dual_sibling?.active_active_day_rate)} vs base ${pct(ch.rp_dual_sibling?.base_active_day_rate)} · flat ${pct(ch.rp_dual_sibling?.active_flat_day_rate)} vs ${pct(ch.rp_dual_sibling?.base_flat_day_rate)}</p><p>Composite ${num(ch.rp_dual_sibling?.active_composite, 3)} (#${ch.rp_dual_sibling?.active_rank ?? "—"}) vs base ${num(ch.rp_dual_sibling?.base_composite, 3)}</p>`),
         card("Most trades / month", `<p><strong style="color:var(--ink)">${ch.most_trades?.name || "—"}</strong></p><p>${num(ch.most_trades?.trades_per_month, 1)} trade-days/mo · active ${pct(ch.most_trades?.active_day_rate)} · ${ch.most_trades?.meets_20tpm ? "≥20 ✓" : "under 20"}</p><p>${ch.most_trades?.note || ""}</p>`),
@@ -613,7 +615,8 @@
           <td class="num">${c.fails}/${c.n_attempts}</td>
           <td class="num">${c.fail_daily} / ${c.fail_max}</td>
           <td class="num">${c.timeouts}</td>
-          <td class="num">${c.avg_days_to_full_pass == null ? "—" : num(c.avg_days_to_full_pass, 0)}</td>
+          <td class="num ${(c.avg_days_to_full_pass || 999) <= 90 ? "up" : ""}">${c.avg_days_to_full_pass == null ? "—" : num(c.avg_days_to_full_pass, 0)}</td>
+          <td class="num">${num(s.scores.pace_score, 2)}</td>
           <td class="num">${num(m.sharpe)}</td>
           <td class="num">${pct(m.cagr)}</td>
           <td class="num ${Math.abs(m.max_dd) > 0.1 ? "down" : ""}">${pct(m.max_dd)}</td>

@@ -480,6 +480,36 @@ def apply_daily_brake(
     return pd.Series(out, index=r.index, name=getattr(rets, "name", "braked"))
 
 
+def scale_path_to_challenge_pace(
+    rets: pd.Series,
+    *,
+    chase_vol: float = 0.18,
+    defend_vol: float = 0.11,
+    lookback: int = 18,
+    p1_target: float = 0.10,
+    day_cap: float = 0.042,
+) -> pd.Series:
+    """
+    Hit Phase-1 (+10%) / Phase-2 (+5%) faster without peeking.
+
+    While lagged equity is below the phase target, vol-scale toward `chase_vol`
+    and add a mild thrust when far from the mark. After the cushion is built,
+    dial down to `defend_vol`. Day moves soft-capped under the $1,250 DLL (~5%).
+    """
+    r = rets.fillna(0.0)
+    eq = (1.0 + r).cumprod()
+    eq_lag = eq.shift(1).fillna(1.0)
+    vol = r.rolling(lookback, min_periods=5).std() * np.sqrt(252.0)
+    vol_lag = vol.shift(1).replace(0, np.nan)
+    target = pd.Series(chase_vol, index=r.index, dtype=float)
+    target = target.where(eq_lag < (1.0 + p1_target) - 1e-12, defend_vol)
+    lever = (target / vol_lag).clip(upper=2.6).fillna(0.0)
+    # Extra push when still near start (gap to +10%)
+    gap = ((1.0 + p1_target) - eq_lag).clip(lower=0.0, upper=p1_target)
+    thrust = (1.0 + 2.2 * (gap / max(p1_target, 1e-9))).clip(1.0, 1.40)
+    out = (r * lever * thrust).clip(-day_cap, day_cap)
+    return out.rename(getattr(rets, "name", "paced"))
+
 def strat_rp_dual_blend(prices: pd.DataFrame, target_vol: float = 0.09) -> pd.Series:
     """Primary FTMO candidate: dominate with risk-parity, add dual-mom thrust."""
     a = strat_risk_parity(prices, target_vol=0.10)
@@ -694,26 +724,50 @@ def version_v3_wide(prices: pd.DataFrame, base_id: str) -> pd.Series:
     )
 
 
-def version_v4_stack(prices: pd.DataFrame, base_id: str) -> pd.Series:
+def version_v4_challenge_pace(prices: pd.DataFrame, base_id: str) -> pd.Series:
     """
-    V4 — Uncorrelated sleeve stack.
-    Core + fast TSMOM + short Donchian + FX mean-rev so *some* sleeve fires most days.
+    V4 — Challenge pace (hit +10% / +5% faster).
+
+    Parent DNA + short dual-mom + fast TSMOM + XS mom, then path-aware
+    chase-vol (~18–20%) until Phase-1 cushion, defend after. Soft day-cap
+    stays under the $1,250 DLL.
     """
     core = _core_rets(prices, base_id)
-    fast = _sleeve_fast_tsmom(prices, WIDE_FX + INDICES + COMMOD, (5, 10, 21), 10, 0.10)
-    don = _sleeve_donch20(prices, WIDE_FX + INDICES + COMMOD, channel=20, target_vol=0.09)
-    mr = strat_fx_meanrev(prices, lookback=3, z_entry=0.90, target_vol=0.07)
-    # Soften FX MR clip so it doesn't dominate risk budget
-    mr = mr.clip(-0.012, 0.012)
-    return _mix_brake(
-        [(0.40, core), (0.25, fast), (0.20, don), (0.15, mr)],
-        target_vol=0.11,
-        soft=0.016,
-        hard=0.030,
-        heal=0.42,
-        clip=0.032,
-        name=f"{base_id}_v4",
+    fam = _family_of(base_id)
+    fast = _sleeve_fast_tsmom(prices, WIDE_FX + INDICES + COMMOD + CRYPTO, (5, 10, 21), 10, 0.15)
+    dual = strat_dual_mom(
+        prices,
+        lookback=42,
+        target_vol=0.16,
+        tickers=INDICES + SECTORS + COMMOD + CRYPTO + WIDE_STOCKS[:8],
+        top_n=4,
+        require_abs=False,
     )
+    xs = strat_xs_mom_stocks(prices, formation=21, n=5, target_vol=0.15, tickers=WIDE_STOCKS)
+    if fam == "xs_mom":
+        parts = [(0.25, core), (0.40, xs), (0.20, dual), (0.15, fast)]
+        chase, defend = 0.18, 0.11
+    elif fam == "index_grind":
+        grind = strat_index_grind(
+            prices, target_vol=0.14, tickers=INDICES + SECTORS, lookbacks=(21, 42, 63), min_breadth=1
+        )
+        parts = [(0.20, core), (0.35, grind), (0.25, dual), (0.20, fast)]
+        chase, defend = 0.17, 0.11
+    elif fam == "risk_parity":
+        rp = strat_risk_parity(
+            prices, target_vol=0.14, tickers=WIDE_FX[:8] + INDICES + SECTORS[:4] + COMMOD, vol_lookback=21
+        )
+        parts = [(0.25, core), (0.30, rp), (0.25, dual), (0.20, fast)]
+        chase, defend = 0.16, 0.10
+    else:
+        parts = [(0.30, core), (0.30, dual), (0.20, xs), (0.20, fast)]
+        chase, defend = 0.175, 0.11
+    mix = sum(w * s.fillna(0.0) for w, s in parts)
+    paced = scale_path_to_challenge_pace(
+        mix.clip(-0.038, 0.038), chase_vol=chase, defend_vol=defend, day_cap=0.040
+    )
+    # Brake closer to DLL so we chase hard but don't walk into −$1,250
+    return apply_daily_brake(paced, soft=0.016, hard=0.036, heal=0.28).rename(f"{base_id}_v4")
 
 
 def version_v5_always_in(prices: pd.DataFrame, base_id: str) -> pd.Series:
@@ -765,7 +819,7 @@ def version_v5_always_in(prices: pd.DataFrame, base_id: str) -> pd.Series:
 VERSION_BUILDERS = {
     2: version_v2_faster,
     3: version_v3_wide,
-    4: version_v4_stack,
+    4: version_v4_challenge_pace,
     5: version_v5_always_in,
 }
 
@@ -779,8 +833,8 @@ VERSION_META = {
         "Adds liquid sectors, FX crosses, mega-cap CFDs, rates/intl — more names to rotate",
     ),
     4: (
-        "V4 Sleeve stack",
-        "Core + fast TSMOM + Donchian-20 + FX mean-rev so at least one sleeve trades most days",
+        "V4 Challenge pace",
+        "Chase ~18–20% vol until +10% cushion, then defend — built to clear Phase 1/2 faster under the $1,250 DLL",
     ),
     5: (
         "V5 Always-in rebalancer",

@@ -163,9 +163,9 @@ def _slice_rets(rets: pd.Series, end: pd.Timestamp, calendar_days: int | None) -
 
 def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard: dict) -> dict:
     """
-    Composite for FTMO goals (fail-first + paycheck discipline):
+    Composite for FTMO goals (fail-first + pace + paycheck discipline):
       1) Fail least often (challenge + funded breach)
-      2) Still pass challenge
+      2) Still pass challenge — and clear P1/P2 in fewer trading days
       3) Lock consistent payouts (breach must not eat the stack)
       4) Room to improve = safe but not maxed return
     """
@@ -174,6 +174,8 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
     p1_rate = float(chal["phase1_pass_rate"]) if "phase1_pass_rate" in chal else 0.0
     room = chal.get("avg_room_on_pass")
     room_score = float(room) if room is not None else 0.0
+    avg_days = chal.get("avg_days_to_full_pass")
+    med_days = chal.get("median_days_to_full_pass")
 
     sharpe = float(metrics.get("sharpe") or 0.0)
     cagr = float(metrics.get("cagr") or 0.0)
@@ -203,6 +205,14 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
     net = float(funded.get("net_kept_vs_lost") or 0.0)
     hoard_lost = float(hoard.get("avg_unpaid_lost") or 0.0)
     payout_edge = max(0.0, hoard_lost - lost)
+
+    # Pace: ~45 trading days to full pass → ~1.0; 90 → 0.5; 180 → 0.25
+    if avg_days is not None and pass_rate >= 0.05:
+        pace_score = 1.0 / (1.0 + float(avg_days) / 45.0)
+        if med_days is not None:
+            pace_score = 0.65 * pace_score + 0.35 * (1.0 / (1.0 + float(med_days) / 45.0))
+    else:
+        pace_score = 0.0
 
     survival = (
         0.32 * (1.0 - fail_rate)
@@ -247,11 +257,13 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
         + 0.05 * min(n_pay / 12.0, 1.0)
     )
 
+    # Survival still leads; pace is now a first-class goal (clear challenge sooner).
     composite = (
-        0.45 * survival
-        + 0.25 * payout_score
-        + 0.20 * return_score
-        + 0.10 * improvement_room
+        0.38 * survival
+        + 0.20 * payout_score
+        + 0.15 * return_score
+        + 0.08 * improvement_room
+        + 0.19 * pace_score
     )
     if not continuous_ok:
         composite -= 0.12
@@ -267,12 +279,19 @@ def score_strategy(chal: dict, metrics: dict, recent: dict, funded: dict, hoard:
         composite -= 0.04
     if p1_rate < 0.10:
         composite -= 0.06
+    # Slow passes: soft penalty even if they eventually clear
+    if avg_days is not None and pass_rate >= 0.15 and float(avg_days) > 150:
+        composite -= 0.04
+    if avg_days is not None and pass_rate >= 0.15 and float(avg_days) > 200:
+        composite -= 0.04
 
     return {
         "survival_score": round(float(survival), 4),
         "return_score": round(float(return_score), 4),
         "improvement_room": round(float(improvement_room), 4),
         "payout_score": round(float(payout_score), 4),
+        "pace_score": round(float(pace_score), 4),
+        "avg_days_to_full_pass": None if avg_days is None else round(float(avg_days), 1),
         "composite": round(float(composite), 4),
         "recent_pass_avg": round(float(r_pass), 4),
         "recent_fail_avg": round(float(r_fail), 4),
@@ -610,6 +629,25 @@ def run() -> dict:
         and r["full_2y"]["challenge"]["full_pass_rate"] >= 0.15
     ] or safe or rows
     most_improvable = max(improvable_pool, key=lambda r: r["scores"]["improvement_room"])
+    fastest_pool = [
+        r
+        for r in rows
+        if r["full_2y"]["challenge"]["full_pass_rate"] >= 0.20
+        and r["full_2y"]["challenge"].get("avg_days_to_full_pass") is not None
+        and r["full_2y"]["challenge"]["fail_rate"] <= 0.25
+    ] or [
+        r
+        for r in rows
+        if r["full_2y"]["challenge"].get("avg_days_to_full_pass") is not None
+    ]
+    fastest_challenge = min(
+        fastest_pool,
+        key=lambda r: (
+            r["full_2y"]["challenge"]["avg_days_to_full_pass"],
+            r["full_2y"]["challenge"]["fail_rate"],
+            -r["scores"]["composite"],
+        ),
+    )
     pay_safe = [
         r for r in rows if r["full_2y"]["funded_payout"]["breach_rate"] <= 0.05
     ] or rows
@@ -738,10 +776,11 @@ def run() -> dict:
         },
         "ranking_rubric": {
             "survival": "Low challenge fail + low funded breach + pass rates",
-            "payout": "Locked trader payouts under biweekly pay-yourself-out; unpaid lost on breach stays small",
+            "pace": "Clear Phase 1 (+10%) and Phase 2 (+5%) in fewer trading days (target ~45–90d full pass)",
+            "payout": "Locked trader payouts under closed-above-$25k withdraw; unpaid lost on breach stays small",
             "return": "Sharpe / Sortino / CAGR + locked paycheck yield",
             "improvement_room": "Safe but not maxed — worth carefully leveraging",
-            "composite": "0.45 survival + 0.25 payout + 0.20 return + 0.10 improvement",
+            "composite": "0.38 survival + 0.20 payout + 0.19 pace + 0.15 return + 0.08 improvement",
         },
         "payout_policy": {
             "assumption": "Withdraw closed excess above $25k only. Underwater = $0 withdrawable until back at initial.",
@@ -784,6 +823,16 @@ def run() -> dict:
                 "improvement_room": most_improvable["scores"]["improvement_room"],
                 "note": "Highest safety cushion relative to extracted return — best candidate to carefully lever up.",
             },
+            "fastest_challenge": {
+                "id": fastest_challenge["id"],
+                "name": fastest_challenge["name"],
+                "avg_days_to_full_pass": fastest_challenge["full_2y"]["challenge"].get("avg_days_to_full_pass"),
+                "median_days_to_full_pass": fastest_challenge["full_2y"]["challenge"].get("median_days_to_full_pass"),
+                "full_pass_rate": fastest_challenge["full_2y"]["challenge"]["full_pass_rate"],
+                "fail_rate": fastest_challenge["full_2y"]["challenge"]["fail_rate"],
+                "pace_score": fastest_challenge["scores"].get("pace_score"),
+                "note": "Fewest avg trading days to clear Phase 1 (+10%) + Phase 2 (+5%) among books with usable pass rate.",
+            },
             "best_paycheck": {
                 "id": best_paycheck["id"],
                 "name": best_paycheck["name"],
@@ -819,8 +868,9 @@ def run() -> dict:
                     str(k): {"label": v[0], "thesis": v[1]} for k, v in VERSION_META.items()
                 },
                 "note": (
-                    "Bakeoff = top-10 V1 books + V2–V5 trade-more variants (~50). "
-                    "V2 faster signals · V3 wide universe · V4 sleeve stack · V5 always-in rebalancer."
+                    "Bakeoff = top-10 V1 books + V2–V5 variants (~50). "
+                    "V2 faster signals · V3 wide universe · V4 challenge pace (hit +10%/+5% sooner) · "
+                    "V5 always-in rebalancer."
                 ),
             },
             "active_sibling": sibling_pack(
@@ -879,7 +929,7 @@ def run() -> dict:
             "challenge_ops": [
                 f"Hard stop before −${RULES.daily_loss_dollars:,.0f} day PnL on the ${RULES.initial_balance:,.0f} account.",
                 f"Never let equity pierce ${RULES.max_loss_floor_dollars:,.0f} (max −${RULES.max_loss_dollars:,.0f} from start).",
-                "Challenge phases still need equity in-account to hit +10% / +5% (sim only).",
+                "Challenge phases still need equity in-account to hit +10% / +5% (sim only) — prefer V4 Challenge pace siblings when base books grind too long.",
                 "Min 4 trading days — grind strategies naturally satisfy this; avoid one-shot lottery days.",
                 "After a −$250–400 day, cut exposure rather than revenge-trading into the $1,250 wall.",
             ],
@@ -923,6 +973,12 @@ def run() -> dict:
         "Most improvable:",
         most_improvable["name"],
         f"room={most_improvable['scores']['improvement_room']:.3f}",
+    )
+    print(
+        "Fastest challenge:",
+        fastest_challenge["name"],
+        f"avg_days={fastest_challenge['full_2y']['challenge'].get('avg_days_to_full_pass')}",
+        f"fail={fastest_challenge['full_2y']['challenge']['fail_rate']:.1%}",
     )
     print(
         "Best paycheck:",
