@@ -227,7 +227,7 @@ def run() -> dict:
         "disclaimer": (
             f"RP + Dual-mom family on a ${RULES.initial_balance:,.0f} account: "
             f"fixed ${RULES.daily_loss_dollars:,.0f} daily loss, "
-            f"${RULES.max_loss_dollars:,.0f} max from start, withdraw all day profit daily."
+            f"${RULES.max_loss_dollars:,.0f} max from start; withdraw closed excess only when ≥ $25k."
         ),
         "how_to_add": (
             "Append a FamilySpec to src/rp_dual_family.py::FAMILY_SPECS "

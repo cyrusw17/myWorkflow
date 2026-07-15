@@ -5,8 +5,10 @@ Operating assumption (user):
   Account size:          $25,000
   Daily loss limit:      $1,250 fixed (not a % of current equity)
   Max loss from start:   $5,000  → equity floor $20,000
-  Each day: withdraw all day profit so the account never compounds above
-            the post-drawdown day-start (cushion does not rebuild from wins)
+  Withdrawals:
+    - Only from closed EOD equity (no open / floating PnL)
+    - Only when account value is ≥ $25,000; pull excess down to $25k
+    - If underwater (< $25k), nothing is withdrawn — cushion rebuilds first
 
 Challenge-phase targets (kept for bakeoff scoring; equity must grow so
 challenge walks do NOT withdraw mid-phase):
@@ -61,12 +63,12 @@ def walk_daily_withdraw(
     stop_on_breach: bool = True,
 ) -> tuple[pd.Series, list[dict], float, pd.Series]:
     """
-    Equity path with "withdraw all day profit" ops.
+    Equity path with closed-position withdrawals only when ≥ initial.
 
-    - Loss days stick (account balance falls).
-    - Profit days withdraw the day's PnL → equity stays at day_start.
-    - Daily kill: post-trade equity < day_start − $1,250 (0.05 of initial).
-    - Max kill: post-trade equity < $20,000 (0.80 of initial).
+    - Apply closed daily return → check $1,250 daily / $5k max on that EOD equity.
+    - If closed equity > $25k: withdraw (equity − $25k), reset account to $25k.
+    - If closed equity ≤ $25k: no withdrawal (cannot take profit while underwater).
+    - Open / floating PnL is never withdrawn — only closed EOD marks.
 
     By default stops at the first breach (account is dead). Returns
     (equity_series, kill_events, locked_profit_frac, cumulative_locked_series).
@@ -88,6 +90,7 @@ def walk_daily_withdraw(
             locked_path.append(locked)
             continue
         day_start = eq
+        # Closed EOD equity only (daily return proxy — no open-position marks).
         gross = day_start * (1.0 + float(ret))
         day_pnl = gross - day_start
         daily_kill = gross < day_start - daily_abs - 1e-12
@@ -113,16 +116,15 @@ def walk_daily_withdraw(
             locked_path.append(locked)
             if stop_on_breach:
                 dead = True
-            elif day_pnl > 0:
-                locked += day_pnl
-                eq = day_start
-                eqs[-1] = eq
-                locked_path[-1] = locked
             continue
-        if day_pnl > 0:
-            locked += day_pnl
-            eq = day_start  # withdraw all profit
+
+        # Withdraw closed profit only while account ≥ $25k (initial = 1.0).
+        if gross > 1.0 + 1e-12:
+            withdraw = gross - 1.0
+            locked += withdraw
+            eq = 1.0
         else:
+            # Underwater or flat: nothing withdrawable; cushion rebuilds toward $25k.
             eq = gross
         eqs.append(eq)
         locked_path.append(locked)
@@ -345,19 +347,19 @@ class PayoutPolicy:
     """
     Funded-account pay-yourself-out policy.
 
-    Default ops (user): withdraw ALL day profit every closed day so equity never
-    compounds above the post-drawdown day-start. Locked payouts survive a breach;
-    unpaid open profit (usually just same-day PnL under this mode) does not.
+    Default ops (user): after each closed day, if equity ≥ $25k initial,
+    withdraw excess down to $25k. Nothing withdrawable while underwater.
+    Only closed EOD equity counts — no open-position / floating PnL pulls.
     """
 
-    every_n_days: int = 1  # 1 = every trading day
-    min_profit: float = 0.0  # any day profit is withdrawn
-    keep_buffer: float = 0.0
+    every_n_days: int = 1  # 1 = every closed trading day
+    min_profit: float = 0.0  # any excess above initial is withdrawable
+    keep_buffer: float = 0.0  # leave account exactly at initial after payout
     trader_split: float = 0.80
     max_days: int = 252
-    # day_pnl: pull that day's gain back to day_start (default).
-    # above_initial: older cadence pull of equity − (1 + keep_buffer).
-    mode: str = "day_pnl"
+    # above_initial: pull equity − (1 + keep_buffer) when ≥ initial (default).
+    # day_pnl: legacy — pull day gain even while underwater.
+    mode: str = "above_initial"
 
 
 @dataclass
@@ -383,9 +385,9 @@ def simulate_funded_payouts(
     """
     Walk a funded account with regular withdrawals.
 
-    Default (day_pnl): apply return → check $1,250 daily / $5k max → if the day
-    is profitable, withdraw day PnL so equity returns to day_start (cushion never
-    rebuilds from wins after a drawdown).
+    Default (above_initial): apply closed return → check $1,250 daily / $5k max →
+    if closed equity > $25k, withdraw excess back to $25k. While underwater,
+    no withdrawal — cushion rebuilds toward initial before profit is lockable.
     """
     rules = rules or FtmoRules()
     policy = policy or PayoutPolicy()
@@ -407,7 +409,7 @@ def simulate_funded_payouts(
     days_since_payout = 0
     last_i = -1
     n = len(path)
-    breach_day_pnl = 0.0
+    breach_open_above_initial = 0.0
 
     for i, (dt, r) in enumerate(path.items()):
         last_i = i
@@ -421,14 +423,15 @@ def simulate_funded_payouts(
 
         if eq < daily_floor - 1e-12:
             status = "fail_daily"
-            breach_day_pnl = max(day_pnl, 0.0)
+            breach_open_above_initial = max(eq - 1.0, 0.0)
             break
         if eq < floor - 1e-12:
             status = "fail_max"
-            breach_day_pnl = max(day_pnl, 0.0)
+            breach_open_above_initial = max(eq - 1.0, 0.0)
             break
 
         if policy.mode == "day_pnl":
+            # Legacy: withdraw day gain even underwater (not current user ops).
             if days_since_payout >= policy.every_n_days and day_pnl > policy.min_profit + 1e-12:
                 locked += day_pnl
                 payouts.append(float(day_pnl))
@@ -436,6 +439,7 @@ def simulate_funded_payouts(
                 peak_since_pay = eq
                 days_since_payout = 0
         elif days_since_payout >= policy.every_n_days:
+            # Closed positions only; withdraw only when ≥ $25k initial.
             open_profit = eq - 1.0
             withdrawable = eq - (1.0 + policy.keep_buffer)
             if open_profit >= policy.min_profit and withdrawable > 1e-12:
@@ -448,9 +452,9 @@ def simulate_funded_payouts(
     unpaid_lost = 0.0
     if status.startswith("fail_"):
         if policy.mode == "day_pnl":
-            unpaid_lost = float(breach_day_pnl)  # usually 0 on a loss-day kill
+            unpaid_lost = 0.0
         else:
-            unpaid_lost = max(peak_since_pay - 1.0, 0.0)
+            unpaid_lost = float(breach_open_above_initial)
     else:
         if policy.mode != "day_pnl":
             withdrawable = eq - (1.0 + policy.keep_buffer)
