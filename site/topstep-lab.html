@@ -64,7 +64,7 @@
     .limits {
       display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-bottom: 1rem;
     }
-    @media (min-width: 800px) { .limits { grid-template-columns: repeat(3, 1fr); } }
+    @media (min-width: 800px) { .limits { grid-template-columns: repeat(4, 1fr); } }
     .limit-card {
       border: 1px solid var(--line); background: var(--card);
       padding: 1rem 0.95rem 0.9rem; position: relative; overflow: hidden;
@@ -147,7 +147,8 @@
     <p class="sub">
       Screen top steady books under Topstep rules, then run <strong>one</strong> winner across
       Combine → Express Funded — no challenge-pace speedups.
-      Account: <strong>$150K</strong> · target <strong>$9,000</strong> · MLL <strong>$4,500</strong> · 15 contracts.
+      Account: <strong>$150K</strong> · target <strong>$9,000</strong> · MLL <strong>$4,500</strong> ·
+      max position <strong>15</strong> (Combine flat / XFA scaling).
       XFA payouts follow official Standard / Consistency paths (90/10).
     </p>
 
@@ -166,6 +167,11 @@
         <p class="label">Max loss limit</p>
         <p class="value" style="color:var(--bad)">$4,500</p>
         <p class="desc">Trailing vs EOD high-water · hit MLL = account closed</p>
+      </div>
+      <div class="limit-card">
+        <p class="label">Max position</p>
+        <p class="value">15</p>
+        <p class="desc">Combine hard cap · XFA scales 3→15 by balance</p>
       </div>
     </div>
 
@@ -209,7 +215,7 @@
       <p class="hint" id="xfaHint">
         Standard: 5 winning days of $150+ → withdraw ≤50% (cap $5k), keep 90%.
         Consistency: ≥3 days + 40% best-day rule → withdraw ≤50% (cap $6k), keep 90%.
-        After any payout, MLL locks at $0.
+        After any payout, MLL locks at $0. Position size follows the 150K Scaling Plan (3→15).
       </p>
       <div class="tabs" id="xfaTabs"></div>
       <div class="row" id="xfaBadges"></div>
@@ -220,6 +226,12 @@
       <h2>Random-start Combine stress</h2>
       <p class="hint">Random Combine launches — fail = pierce trailing $4,500 MLL. Same single strategy, no pace overlays.</p>
       <div class="champ-grid" id="mcCards"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Position size rule</h2>
+      <p class="hint">Combine allows the full 15 minis. Express Funded replaces that with the Scaling Plan — size is set from prior EOD balance.</p>
+      <div class="champ-grid" id="positionCards"></div>
     </section>
 
     <section class="panel">
@@ -368,6 +380,7 @@
           `<div class="badge ${x.status === "survived" ? "ok" : x.status === "fail_mll" ? "warn" : ""}"><strong>${x.status}</strong> · ${x.path}</div>`,
           `<div class="badge">Days <strong>${x.days || 0}</strong></div>`,
           `<div class="badge">Payouts <strong>${x.n_payouts || 0}</strong></div>`,
+          `<div class="badge">Contracts (end) <strong>${(curve.length ? curve[curve.length-1].contracts : "—") ?? "—"}</strong> / ${acc.max_contracts || 15}</div>`,
           `<div class="badge ok">Trader locked <strong>${usd(x.locked_trader)}</strong></div>`,
           `<div class="badge">End bal <strong>${usd(x.end_balance)}</strong></div>`,
           `<div class="badge">Min <strong>${usd(x.min_balance)}</strong></div>`,
@@ -443,6 +456,16 @@
       ].join("");
 
       document.getElementById("rulesList").innerHTML = (data.rules_notes || []).map((t) => `<li>${t}</li>`).join("");
+
+      const pos = acc.position_rules || {};
+      const tiers = pos.xfa_scaling_150k || [];
+      document.getElementById("positionCards").innerHTML = [
+        `<div class="box primary"><h3>Combine · flat ${acc.max_contracts || 15}</h3><p>${pos.combine || "Hard cap 15 mini contracts."}</p><p>Day PnL clipped to full-size ceiling (${usd(acc.max_day_pnl_at_full_size || 7500)}).</p></div>`,
+        `<div class="box"><h3>XFA Scaling Plan</h3><p>${(tiers.map((t) => {
+          const label = t.balance_lt == null ? "$4,500+" : "< $" + Number(t.balance_lt).toLocaleString();
+          return label + " → <strong style='color:var(--ink)'>" + t.contracts + "</strong>";
+        }).join("<br/>")) || "3 → 4 → 5 → 10 → 15"}</p><p>${pos.note || ""}</p></div>`,
+      ].join("");
     }
 
     main().catch((e) => {

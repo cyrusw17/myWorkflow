@@ -263,9 +263,21 @@ def main() -> dict:
             "profit_target": RULES.profit_target,
             "max_loss_limit": RULES.max_loss_limit,
             "max_contracts": RULES.max_contracts,
+            "max_day_pnl_at_full_size": RULES.max_day_pnl,
             "combine_consistency": RULES.combine_consistency,
             "winning_day_dollars": RULES.winning_day_dollars,
             "trader_split": RULES.trader_split,
+            "position_rules": {
+                "combine": f"Hard cap {RULES.max_contracts} mini contracts (150 micros).",
+                "xfa_scaling_150k": [
+                    {"balance_lt": 1500, "contracts": 3},
+                    {"balance_lt": 2000, "contracts": 4},
+                    {"balance_lt": 3000, "contracts": 5},
+                    {"balance_lt": 4500, "contracts": 10},
+                    {"balance_lt": None, "contracts": 15},
+                ],
+                "note": "XFA Scaling Plan uses prior EOD balance; size updates next session.",
+            },
             "standard": {
                 "win_days": RULES.standard_win_days,
                 "payout_cap": RULES.standard_payout_cap,
@@ -280,7 +292,8 @@ def main() -> dict:
         },
         "rules_notes": [
             f"${RULES.buying_power:,.0f} buying power · profit target ${RULES.profit_target:,.0f} · MLL ${RULES.max_loss_limit:,.0f}.",
-            f"Max position {RULES.max_contracts} contracts (daily |PnL| soft-capped in sim).",
+            f"Max position: Combine hard-capped at {RULES.max_contracts} mini contracts (PnL clipped to full-size day ceiling).",
+            "XFA Scaling Plan (150K): 3 → 4 → 5 → 10 → 15 contracts by prior EOD balance tiers ($0 / $1.5k / $2k / $3k / $4.5k+).",
             "Combine: best day ≤ 50% of total profit or keep trading until consistency clears.",
             "XFA Standard: 5 winning days of $150+ → withdraw ≤50% of balance, cap $5,000, keep 90%.",
             "XFA Consistency: ≥3 trading days + 40% consistency → withdraw ≤50%, cap $6,000, keep 90%.",

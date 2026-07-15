@@ -6,9 +6,8 @@ Modeled product (from Topstep UI / public rules — verify before trading):
 
 Trading Combine (150K):
   Profit target:          $9,000
-  Maximum Loss Limit:     $4,500 (trailing vs end-of-day high-water; Combine often
-                          trails more tightly — we use EOD HWM − $4,500)
-  Max position:           15 contracts (soft daily PnL cap as proxy)
+  Maximum Loss Limit:     $4,500 (trailing vs end-of-day high-water)
+  Max position:           15 mini contracts (hard cap during Combine)
   Consistency:            best single day ≤ 50% of cumulative Combine profit
                           (else keep trading until ratio clears)
 
@@ -17,6 +16,9 @@ Express Funded Account (XFA) — Official Topstep rules (Jun 2025+):
   MLL:                    based on highest EOD balance; does not drop when you lose
   After MLL trails to $0: account locks at $0 floor
   Hitting/going through MLL: account permanently closed
+  Scaling plan (150K):    position size vs prior EOD balance → max 15 lots
+    $0–$1,500 → 3 · $1,500–$2,000 → 4 · $2,000–$3,000 → 5
+    $3,000–$4,500 → 10 · $4,500+ → 15
 
   Standard payout path:
     - 5 Winning Days of $150+ net
@@ -49,9 +51,9 @@ class Topstep150k:
     xfa_activation: float = 149.0
     profit_target: float = 9_000.0
     max_loss_limit: float = 4_500.0  # absolute $ distance from HWM / start
-    max_contracts: int = 15
-    # Soft daily |pnl| ceiling (~15 contracts × ES $50/pt × ~10 pts)
-    max_day_pnl: float = 7_500.0
+    max_contracts: int = 15  # Combine hard cap (15 mini / 150 micro)
+    # Soft daily |pnl| ceiling at full size (~15 contracts × ES $50/pt × ~10 pts)
+    max_day_pnl_per_contract: float = 500.0  # → $7,500 at 15 lots
     combine_consistency: float = 0.50  # best day / total profit
     winning_day_dollars: float = 150.0
     trader_split: float = 0.90
@@ -66,12 +68,54 @@ class Topstep150k:
     max_combine_days: int = 120
     max_xfa_days: int = 252
 
+    @property
+    def max_day_pnl(self) -> float:
+        return self.max_day_pnl_per_contract * self.max_contracts
+
+
+# 150K XFA Scaling Plan — prior EOD balance → max mini contracts (Topstep public tiers)
+XFA_SCALING_150K: tuple[tuple[float, int], ...] = (
+    (1_500.0, 3),
+    (2_000.0, 4),
+    (3_000.0, 5),
+    (4_500.0, 10),
+    (float("inf"), 15),
+)
+
+
+def contracts_allowed(eod_balance: float, rules: Topstep150k | None = None, *, phase: str = "combine") -> int:
+    """
+    Combine: flat 15 mini contracts.
+    XFA: Scaling Plan vs prior end-of-day balance (updates next session).
+    """
+    rules = rules or Topstep150k()
+    if phase == "combine":
+        return rules.max_contracts
+    bal = float(eod_balance)
+    for ceiling, lots in XFA_SCALING_150K:
+        if bal < ceiling:
+            return lots
+    return rules.max_contracts
+
+
+def apply_position_cap(pnl: float, contracts: int, rules: Topstep150k | None = None) -> float:
+    """Scale a full-size (15-lot) day PnL down to allowed contracts and clip."""
+    rules = rules or Topstep150k()
+    lots = max(0, int(contracts))
+    scale = lots / float(rules.max_contracts)
+    capped = float(pnl) * scale
+    day_cap = rules.max_day_pnl_per_contract * lots
+    if day_cap <= 0:
+        return 0.0
+    return float(np.clip(capped, -day_cap, day_cap))
+
 
 def returns_to_dollars(rets: pd.Series, rules: Topstep150k | None = None) -> pd.Series:
-    """Map unit strategy returns → dollar day PnL on 150K buying-power notional."""
+    """Map unit strategy returns → dollar day PnL at full 15-contract Combine size."""
     rules = rules or Topstep150k()
     r = rets.fillna(0.0).astype(float)
     raw = r * rules.buying_power
+    # Full-size Combine notional, clipped to 15-lot daily ceiling
     return raw.clip(-rules.max_day_pnl, rules.max_day_pnl)
 
 
@@ -133,7 +177,9 @@ def simulate_combine(
 
     for i, (dt, pnl) in enumerate(path.items()):
         last_i = i
-        pnl = float(pnl)
+        # Combine: hard max position = 15 contracts
+        lots = contracts_allowed(0.0, rules, phase="combine")
+        pnl = apply_position_cap(float(pnl), lots, rules)
         bal += pnl
         min_bal = min(min_bal, bal)
         if pnl >= rules.winning_day_dollars:
@@ -154,6 +200,7 @@ def simulate_combine(
                 "day_pnl": round(pnl, 2),
                 "mll": round(mll, 2),
                 "hwm": round(hwm, 2),
+                "contracts": lots,
                 "consistency": None if cons is None else round(float(cons), 4),
             }
         )
@@ -208,8 +255,9 @@ def simulate_xfa(
     path: str = "standard",  # standard | consistency
 ) -> XfaResult:
     """
-    Express Funded walk with EOD-trailing MLL and chosen payout path.
-    After each payout, Topstep locks MLL at $0 (account cannot go negative).
+    Express Funded walk with EOD-trailing MLL, Scaling Plan position sizes,
+    and chosen payout path. After each payout, Topstep locks MLL at $0.
+    Contract limit uses prior EOD balance (starts at 3 lots on 150K).
     """
     rules = rules or Topstep150k()
     assert path in ("standard", "consistency")
@@ -219,6 +267,7 @@ def simulate_xfa(
 
     start_ts = series.index[0]
     bal = 0.0
+    prior_eod = 0.0  # Scaling Plan looks at previous session close
     hwm = 0.0
     mll = -rules.max_loss_limit
     mll_locked_zero = False
@@ -237,9 +286,10 @@ def simulate_xfa(
         rules.standard_payout_cap if path == "standard" else rules.consistency_payout_cap
     )
 
-    for i, (dt, pnl) in enumerate(series.items()):
+    for i, (dt, raw_pnl) in enumerate(series.items()):
         last_i = i
-        pnl = float(pnl)
+        lots = contracts_allowed(prior_eod, rules, phase="xfa")
+        pnl = apply_position_cap(float(raw_pnl), lots, rules)
         bal += pnl
         min_bal = min(min_bal, bal)
         trade_days_since_pay += 1
@@ -267,6 +317,7 @@ def simulate_xfa(
                 "mll": round(mll, 2),
                 "locked_trader": round(locked_trader, 2),
                 "win_days_cycle": win_days_since_pay,
+                "contracts": lots,
             }
         )
 
@@ -302,12 +353,14 @@ def simulate_xfa(
                         "gross": round(gross, 2),
                         "trader": round(trader, 2),
                         "balance_after": round(bal, 2),
+                        "contracts_at_payout": lots,
                     }
                 )
                 win_days_since_pay = 0
                 trade_days_since_pay = 0
                 window_pnls = []
 
+        prior_eod = bal  # next session's Scaling Plan reference
     days = last_i + 1 if last_i >= 0 else 0
     if status == "survived" and days < 40 and days >= len(series):
         status = "censored"

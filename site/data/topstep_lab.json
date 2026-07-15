@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-15T02:18:15.764173+00:00",
+  "generated_at": "2026-07-15T02:19:56.338398+00:00",
   "disclaimer": "Research approximation of Topstep 150K Trading Combine\u00ae + Express Funded rules. Daily multi-asset return proxies \u2260 TopstepX futures fills, fees, or scaling plan. Verify live rules at topstep.com before purchasing.",
   "brand": {
     "name": "Topstep",
@@ -183,9 +183,36 @@
     "profit_target": 9000.0,
     "max_loss_limit": 4500.0,
     "max_contracts": 15,
+    "max_day_pnl_at_full_size": 7500.0,
     "combine_consistency": 0.5,
     "winning_day_dollars": 150.0,
     "trader_split": 0.9,
+    "position_rules": {
+      "combine": "Hard cap 15 mini contracts (150 micros).",
+      "xfa_scaling_150k": [
+        {
+          "balance_lt": 1500,
+          "contracts": 3
+        },
+        {
+          "balance_lt": 2000,
+          "contracts": 4
+        },
+        {
+          "balance_lt": 3000,
+          "contracts": 5
+        },
+        {
+          "balance_lt": 4500,
+          "contracts": 10
+        },
+        {
+          "balance_lt": null,
+          "contracts": 15
+        }
+      ],
+      "note": "XFA Scaling Plan uses prior EOD balance; size updates next session."
+    },
     "standard": {
       "win_days": 5,
       "payout_cap": 5000.0,
@@ -200,7 +227,8 @@
   },
   "rules_notes": [
     "$150,000 buying power \u00b7 profit target $9,000 \u00b7 MLL $4,500.",
-    "Max position 15 contracts (daily |PnL| soft-capped in sim).",
+    "Max position: Combine hard-capped at 15 mini contracts (PnL clipped to full-size day ceiling).",
+    "XFA Scaling Plan (150K): 3 \u2192 4 \u2192 5 \u2192 10 \u2192 15 contracts by prior EOD balance tiers ($0 / $1.5k / $2k / $3k / $4.5k+).",
     "Combine: best day \u2264 50% of total profit or keep trading until consistency clears.",
     "XFA Standard: 5 winning days of $150+ \u2192 withdraw \u226450% of balance, cap $5,000, keep 90%.",
     "XFA Consistency: \u22653 trading days + 40% consistency \u2192 withdraw \u226450%, cap $6,000, keep 90%.",
@@ -240,6 +268,7 @@
         "day_pnl": 337.98,
         "mll": -4162.02,
         "hwm": 337.98,
+        "contracts": 15,
         "consistency": 1.0
       },
       {
@@ -248,6 +277,7 @@
         "day_pnl": 642.7,
         "mll": -3519.32,
         "hwm": 980.68,
+        "contracts": 15,
         "consistency": 0.6554
       },
       {
@@ -256,6 +286,7 @@
         "day_pnl": -545.35,
         "mll": -3519.32,
         "hwm": 980.68,
+        "contracts": 15,
         "consistency": 1.4763
       },
       {
@@ -264,6 +295,7 @@
         "day_pnl": 852.17,
         "mll": -3212.49,
         "hwm": 1287.51,
+        "contracts": 15,
         "consistency": 0.6619
       },
       {
@@ -272,6 +304,7 @@
         "day_pnl": 313.29,
         "mll": -2899.2,
         "hwm": 1600.8,
+        "contracts": 15,
         "consistency": 0.5323
       },
       {
@@ -280,6 +313,7 @@
         "day_pnl": 181.23,
         "mll": -2717.97,
         "hwm": 1782.03,
+        "contracts": 15,
         "consistency": 0.4782
       },
       {
@@ -288,6 +322,7 @@
         "day_pnl": 91.73,
         "mll": -2626.24,
         "hwm": 1873.76,
+        "contracts": 15,
         "consistency": 0.4548
       },
       {
@@ -296,6 +331,7 @@
         "day_pnl": 79.9,
         "mll": -2546.34,
         "hwm": 1953.66,
+        "contracts": 15,
         "consistency": 0.4362
       },
       {
@@ -304,6 +340,7 @@
         "day_pnl": 757.49,
         "mll": -1788.86,
         "hwm": 2711.14,
+        "contracts": 15,
         "consistency": 0.3143
       },
       {
@@ -312,6 +349,7 @@
         "day_pnl": -913.24,
         "mll": -1788.86,
         "hwm": 2711.14,
+        "contracts": 15,
         "consistency": 0.474
       },
       {
@@ -320,6 +358,7 @@
         "day_pnl": 349.06,
         "mll": -1788.86,
         "hwm": 2711.14,
+        "contracts": 15,
         "consistency": 0.3969
       },
       {
@@ -328,6 +367,7 @@
         "day_pnl": -267.27,
         "mll": -1788.86,
         "hwm": 2711.14,
+        "contracts": 15,
         "consistency": 0.4534
       },
       {
@@ -336,6 +376,7 @@
         "day_pnl": -43.28,
         "mll": -1788.86,
         "hwm": 2711.14,
+        "contracts": 15,
         "consistency": 0.464
       },
       {
@@ -344,6 +385,7 @@
         "day_pnl": 333.4,
         "mll": -1788.86,
         "hwm": 2711.14,
+        "contracts": 15,
         "consistency": 0.3927
       },
       {
@@ -352,6 +394,7 @@
         "day_pnl": 681.63,
         "mll": -1648.55,
         "hwm": 2851.45,
+        "contracts": 15,
         "consistency": 0.2989
       },
       {
@@ -360,6 +403,7 @@
         "day_pnl": 312.72,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.2693
       },
       {
@@ -368,6 +412,7 @@
         "day_pnl": -594.69,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.3317
       },
       {
@@ -376,6 +421,7 @@
         "day_pnl": -394.11,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.3917
       },
       {
@@ -384,6 +430,7 @@
         "day_pnl": 118.66,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.3715
       },
       {
@@ -392,6 +439,7 @@
         "day_pnl": 53.28,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.363
       },
       {
@@ -400,6 +448,7 @@
         "day_pnl": 56.43,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.3545
       },
       {
@@ -408,6 +457,7 @@
         "day_pnl": -50.49,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.3621
       },
       {
@@ -416,6 +466,7 @@
         "day_pnl": 477.95,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.301
       },
       {
@@ -424,6 +475,7 @@
         "day_pnl": -545.13,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.3728
       },
       {
@@ -432,6 +484,7 @@
         "day_pnl": 340.1,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.3245
       },
       {
@@ -440,6 +493,7 @@
         "day_pnl": -400.17,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.3828
       },
       {
@@ -448,6 +502,7 @@
         "day_pnl": -8.79,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.3843
       },
       {
@@ -456,6 +511,7 @@
         "day_pnl": -328.91,
         "mll": -1335.83,
         "hwm": 3164.17,
+        "contracts": 15,
         "consistency": 0.4513
       },
       {
@@ -464,6 +520,7 @@
         "day_pnl": 2527.96,
         "mll": -83.72,
         "hwm": 4416.28,
+        "contracts": 15,
         "consistency": 0.5724
       },
       {
@@ -472,6 +529,7 @@
         "day_pnl": 199.67,
         "mll": 115.95,
         "hwm": 4615.95,
+        "contracts": 15,
         "consistency": 0.5477
       },
       {
@@ -480,6 +538,7 @@
         "day_pnl": -114.39,
         "mll": 115.95,
         "hwm": 4615.95,
+        "contracts": 15,
         "consistency": 0.5616
       },
       {
@@ -488,6 +547,7 @@
         "day_pnl": 590.63,
         "mll": 592.19,
         "hwm": 5092.19,
+        "contracts": 15,
         "consistency": 0.4964
       },
       {
@@ -496,6 +556,7 @@
         "day_pnl": 713.61,
         "mll": 1305.8,
         "hwm": 5805.8,
+        "contracts": 15,
         "consistency": 0.4354
       },
       {
@@ -504,6 +565,7 @@
         "day_pnl": -0.17,
         "mll": 1305.8,
         "hwm": 5805.8,
+        "contracts": 15,
         "consistency": 0.4354
       },
       {
@@ -512,6 +574,7 @@
         "day_pnl": 33.26,
         "mll": 1338.89,
         "hwm": 5838.89,
+        "contracts": 15,
         "consistency": 0.433
       },
       {
@@ -520,6 +583,7 @@
         "day_pnl": 938.67,
         "mll": 2277.56,
         "hwm": 6777.56,
+        "contracts": 15,
         "consistency": 0.373
       },
       {
@@ -528,6 +592,7 @@
         "day_pnl": 146.61,
         "mll": 2424.17,
         "hwm": 6924.17,
+        "contracts": 15,
         "consistency": 0.3651
       },
       {
@@ -536,6 +601,7 @@
         "day_pnl": -46.92,
         "mll": 2424.17,
         "hwm": 6924.17,
+        "contracts": 15,
         "consistency": 0.3676
       },
       {
@@ -544,6 +610,7 @@
         "day_pnl": 655.84,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3356
       },
       {
@@ -552,6 +619,7 @@
         "day_pnl": -386.73,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3537
       },
       {
@@ -560,6 +628,7 @@
         "day_pnl": -8.97,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3542
       },
       {
@@ -568,6 +637,7 @@
         "day_pnl": -160.03,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3623
       },
       {
@@ -576,6 +646,7 @@
         "day_pnl": 322.46,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3463
       },
       {
@@ -584,6 +655,7 @@
         "day_pnl": -79.95,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3501
       },
       {
@@ -592,6 +664,7 @@
         "day_pnl": -251.81,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3628
       },
       {
@@ -600,6 +673,7 @@
         "day_pnl": 84.57,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3584
       },
       {
@@ -608,6 +682,7 @@
         "day_pnl": -571.91,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3901
       },
       {
@@ -616,6 +691,7 @@
         "day_pnl": -0.07,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3901
       },
       {
@@ -624,6 +700,7 @@
         "day_pnl": 30.95,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3882
       },
       {
@@ -632,6 +709,7 @@
         "day_pnl": 802.31,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.3456
       },
       {
@@ -640,6 +718,7 @@
         "day_pnl": -212.72,
         "mll": 3033.1,
         "hwm": 7533.1,
+        "contracts": 15,
         "consistency": 0.356
       },
       {
@@ -648,6 +727,7 @@
         "day_pnl": 702.05,
         "mll": 3303.22,
         "hwm": 7803.22,
+        "contracts": 15,
         "consistency": 0.324
       },
       {
@@ -656,6 +736,7 @@
         "day_pnl": 582.31,
         "mll": 3885.53,
         "hwm": 8385.53,
+        "contracts": 15,
         "consistency": 0.3015
       },
       {
@@ -664,6 +745,7 @@
         "day_pnl": -981.87,
         "mll": 3885.53,
         "hwm": 8385.53,
+        "contracts": 15,
         "consistency": 0.3414
       },
       {
@@ -672,6 +754,7 @@
         "day_pnl": -14.07,
         "mll": 3885.53,
         "hwm": 8385.53,
+        "contracts": 15,
         "consistency": 0.3421
       },
       {
@@ -680,6 +763,7 @@
         "day_pnl": 175.03,
         "mll": 3885.53,
         "hwm": 8385.53,
+        "contracts": 15,
         "consistency": 0.3342
       },
       {
@@ -688,6 +772,7 @@
         "day_pnl": 339.09,
         "mll": 3885.53,
         "hwm": 8385.53,
+        "contracts": 15,
         "consistency": 0.3198
       },
       {
@@ -696,6 +781,7 @@
         "day_pnl": -290.12,
         "mll": 3885.53,
         "hwm": 8385.53,
+        "contracts": 15,
         "consistency": 0.332
       },
       {
@@ -704,6 +790,7 @@
         "day_pnl": 1390.29,
         "mll": 4503.89,
         "hwm": 9003.89,
+        "contracts": 15,
         "consistency": 0.2808
       }
     ]
@@ -712,260 +799,291 @@
     "status": "fail_mll",
     "path": "standard",
     "days": 30,
-    "end_balance": -361.85,
-    "min_balance": -361.85,
+    "end_balance": -151.67,
+    "min_balance": -151.67,
     "n_payouts": 1,
-    "locked_trader": 2017.23,
-    "locked_gross": 2241.37,
+    "locked_trader": 474.81,
+    "locked_gross": 527.57,
     "start": "2025-07-03",
     "payouts": [
       {
-        "date": "2025-07-17",
-        "gross": 2241.37,
-        "trader": 2017.23,
-        "balance_after": 2241.37
+        "date": "2025-07-23",
+        "gross": 527.57,
+        "trader": 474.81,
+        "balance_after": 527.57,
+        "contracts_at_payout": 3
       }
     ],
     "curve": [
       {
         "date": "2025-07-03",
-        "balance": 1386.54,
-        "day_pnl": 1386.54,
-        "mll": -3113.46,
+        "balance": 277.31,
+        "day_pnl": 277.31,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-04",
-        "balance": 1162.13,
-        "day_pnl": -224.41,
-        "mll": -3113.46,
+        "balance": 232.43,
+        "day_pnl": -44.88,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-05",
-        "balance": 1189.54,
-        "day_pnl": 27.4,
-        "mll": -3113.46,
+        "balance": 237.91,
+        "day_pnl": 5.48,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-06",
-        "balance": 1275.74,
-        "day_pnl": 86.21,
-        "mll": -3113.46,
+        "balance": 255.15,
+        "day_pnl": 17.24,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-07",
-        "balance": 323.82,
-        "day_pnl": -951.93,
-        "mll": -3113.46,
+        "balance": 64.76,
+        "day_pnl": -190.39,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-08",
-        "balance": 384.4,
-        "day_pnl": 60.58,
-        "mll": -3113.46,
+        "balance": 76.88,
+        "day_pnl": 12.12,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-09",
-        "balance": 1747.76,
-        "day_pnl": 1363.36,
-        "mll": -2752.24,
+        "balance": 349.55,
+        "day_pnl": 272.67,
+        "mll": -4150.45,
         "locked_trader": 0.0,
-        "win_days_cycle": 2
+        "win_days_cycle": 2,
+        "contracts": 3
       },
       {
         "date": "2025-07-10",
-        "balance": 2873.38,
-        "day_pnl": 1125.62,
-        "mll": -1626.62,
+        "balance": 574.68,
+        "day_pnl": 225.12,
+        "mll": -3925.32,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-11",
-        "balance": 3017.84,
-        "day_pnl": 144.46,
-        "mll": -1482.16,
+        "balance": 603.57,
+        "day_pnl": 28.89,
+        "mll": -3896.43,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-12",
-        "balance": 3008.42,
-        "day_pnl": -9.42,
-        "mll": -1482.16,
+        "balance": 601.68,
+        "day_pnl": -1.88,
+        "mll": -3896.43,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-13",
-        "balance": 3139.91,
-        "day_pnl": 131.49,
-        "mll": -1360.09,
+        "balance": 627.98,
+        "day_pnl": 26.3,
+        "mll": -3872.02,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-14",
-        "balance": 3152.81,
-        "day_pnl": 12.9,
-        "mll": -1347.19,
+        "balance": 630.56,
+        "day_pnl": 2.58,
+        "mll": -3869.44,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-15",
-        "balance": 2737.34,
-        "day_pnl": -415.47,
-        "mll": -1347.19,
+        "balance": 547.47,
+        "day_pnl": -83.09,
+        "mll": -3869.44,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-16",
-        "balance": 3292.69,
-        "day_pnl": 555.35,
-        "mll": -1207.31,
+        "balance": 658.54,
+        "day_pnl": 111.07,
+        "mll": -3841.46,
         "locked_trader": 0.0,
-        "win_days_cycle": 4
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-17",
-        "balance": 4482.74,
-        "day_pnl": 1190.05,
-        "mll": -17.26,
+        "balance": 896.55,
+        "day_pnl": 238.01,
+        "mll": -3603.45,
         "locked_trader": 0.0,
-        "win_days_cycle": 5
+        "win_days_cycle": 4,
+        "contracts": 3
       },
       {
         "date": "2025-07-18",
-        "balance": 1770.82,
-        "day_pnl": -470.55,
-        "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 0
+        "balance": 802.44,
+        "day_pnl": -94.11,
+        "mll": -3603.45,
+        "locked_trader": 0.0,
+        "win_days_cycle": 4,
+        "contracts": 3
       },
       {
         "date": "2025-07-19",
-        "balance": 1762.62,
-        "day_pnl": -8.2,
-        "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 0
+        "balance": 800.8,
+        "day_pnl": -1.64,
+        "mll": -3603.45,
+        "locked_trader": 0.0,
+        "win_days_cycle": 4,
+        "contracts": 3
       },
       {
         "date": "2025-07-20",
-        "balance": 1663.94,
-        "day_pnl": -98.68,
-        "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 0
+        "balance": 781.06,
+        "day_pnl": -19.74,
+        "mll": -3603.45,
+        "locked_trader": 0.0,
+        "win_days_cycle": 4,
+        "contracts": 3
       },
       {
         "date": "2025-07-21",
-        "balance": 1971.88,
-        "day_pnl": 307.94,
-        "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 1
+        "balance": 842.65,
+        "day_pnl": 61.59,
+        "mll": -3603.45,
+        "locked_trader": 0.0,
+        "win_days_cycle": 4,
+        "contracts": 3
       },
       {
         "date": "2025-07-22",
-        "balance": 1932.58,
-        "day_pnl": -39.29,
-        "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 1
+        "balance": 834.79,
+        "day_pnl": -7.86,
+        "mll": -3603.45,
+        "locked_trader": 0.0,
+        "win_days_cycle": 4,
+        "contracts": 3
       },
       {
         "date": "2025-07-23",
-        "balance": 3034.33,
-        "day_pnl": 1101.75,
-        "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 2
+        "balance": 1055.14,
+        "day_pnl": 220.35,
+        "mll": -3444.86,
+        "locked_trader": 0.0,
+        "win_days_cycle": 5,
+        "contracts": 3
       },
       {
         "date": "2025-07-24",
-        "balance": 3127.2,
-        "day_pnl": 92.87,
+        "balance": 546.14,
+        "day_pnl": 18.57,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 2
+        "locked_trader": 474.81,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-25",
-        "balance": 3086.99,
-        "day_pnl": -40.22,
+        "balance": 538.1,
+        "day_pnl": -8.04,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 2
+        "locked_trader": 474.81,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-26",
-        "balance": 3133.9,
-        "day_pnl": 46.91,
+        "balance": 547.48,
+        "day_pnl": 9.38,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 2
+        "locked_trader": 474.81,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-27",
-        "balance": 3425.6,
-        "day_pnl": 291.7,
+        "balance": 605.82,
+        "day_pnl": 58.34,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 474.81,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-28",
-        "balance": 3298.21,
-        "day_pnl": -127.38,
+        "balance": 580.35,
+        "day_pnl": -25.48,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 474.81,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-29",
-        "balance": 3035.91,
-        "day_pnl": -262.3,
+        "balance": 527.89,
+        "day_pnl": -52.46,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 474.81,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-30",
-        "balance": 2787.9,
-        "day_pnl": -248.02,
+        "balance": 478.28,
+        "day_pnl": -49.6,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 474.81,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-31",
-        "balance": 2627.27,
-        "day_pnl": -160.63,
+        "balance": 446.16,
+        "day_pnl": -32.13,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 474.81,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-08-01",
-        "balance": -361.85,
-        "day_pnl": -2989.12,
+        "balance": -151.67,
+        "day_pnl": -597.82,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 474.81,
+        "win_days_cycle": 0,
+        "contracts": 3
       }
     ]
   },
@@ -973,260 +1091,291 @@
     "status": "fail_mll",
     "path": "consistency",
     "days": 30,
-    "end_balance": -361.85,
-    "min_balance": -361.85,
+    "end_balance": -72.37,
+    "min_balance": -72.37,
     "n_payouts": 1,
-    "locked_trader": 2017.23,
-    "locked_gross": 2241.37,
+    "locked_trader": 403.45,
+    "locked_gross": 448.27,
     "start": "2025-07-03",
     "payouts": [
       {
         "date": "2025-07-17",
-        "gross": 2241.37,
-        "trader": 2017.23,
-        "balance_after": 2241.37
+        "gross": 448.27,
+        "trader": 403.45,
+        "balance_after": 448.27,
+        "contracts_at_payout": 3
       }
     ],
     "curve": [
       {
         "date": "2025-07-03",
-        "balance": 1386.54,
-        "day_pnl": 1386.54,
-        "mll": -3113.46,
+        "balance": 277.31,
+        "day_pnl": 277.31,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-04",
-        "balance": 1162.13,
-        "day_pnl": -224.41,
-        "mll": -3113.46,
+        "balance": 232.43,
+        "day_pnl": -44.88,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-05",
-        "balance": 1189.54,
-        "day_pnl": 27.4,
-        "mll": -3113.46,
+        "balance": 237.91,
+        "day_pnl": 5.48,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-06",
-        "balance": 1275.74,
-        "day_pnl": 86.21,
-        "mll": -3113.46,
+        "balance": 255.15,
+        "day_pnl": 17.24,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-07",
-        "balance": 323.82,
-        "day_pnl": -951.93,
-        "mll": -3113.46,
+        "balance": 64.76,
+        "day_pnl": -190.39,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-08",
-        "balance": 384.4,
-        "day_pnl": 60.58,
-        "mll": -3113.46,
+        "balance": 76.88,
+        "day_pnl": 12.12,
+        "mll": -4222.69,
         "locked_trader": 0.0,
-        "win_days_cycle": 1
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-09",
-        "balance": 1747.76,
-        "day_pnl": 1363.36,
-        "mll": -2752.24,
+        "balance": 349.55,
+        "day_pnl": 272.67,
+        "mll": -4150.45,
         "locked_trader": 0.0,
-        "win_days_cycle": 2
+        "win_days_cycle": 2,
+        "contracts": 3
       },
       {
         "date": "2025-07-10",
-        "balance": 2873.38,
-        "day_pnl": 1125.62,
-        "mll": -1626.62,
+        "balance": 574.68,
+        "day_pnl": 225.12,
+        "mll": -3925.32,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-11",
-        "balance": 3017.84,
-        "day_pnl": 144.46,
-        "mll": -1482.16,
+        "balance": 603.57,
+        "day_pnl": 28.89,
+        "mll": -3896.43,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-12",
-        "balance": 3008.42,
-        "day_pnl": -9.42,
-        "mll": -1482.16,
+        "balance": 601.68,
+        "day_pnl": -1.88,
+        "mll": -3896.43,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-13",
-        "balance": 3139.91,
-        "day_pnl": 131.49,
-        "mll": -1360.09,
+        "balance": 627.98,
+        "day_pnl": 26.3,
+        "mll": -3872.02,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-14",
-        "balance": 3152.81,
-        "day_pnl": 12.9,
-        "mll": -1347.19,
+        "balance": 630.56,
+        "day_pnl": 2.58,
+        "mll": -3869.44,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-15",
-        "balance": 2737.34,
-        "day_pnl": -415.47,
-        "mll": -1347.19,
+        "balance": 547.47,
+        "day_pnl": -83.09,
+        "mll": -3869.44,
         "locked_trader": 0.0,
-        "win_days_cycle": 3
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-16",
-        "balance": 3292.69,
-        "day_pnl": 555.35,
-        "mll": -1207.31,
+        "balance": 658.54,
+        "day_pnl": 111.07,
+        "mll": -3841.46,
         "locked_trader": 0.0,
-        "win_days_cycle": 4
+        "win_days_cycle": 3,
+        "contracts": 3
       },
       {
         "date": "2025-07-17",
-        "balance": 4482.74,
-        "day_pnl": 1190.05,
-        "mll": -17.26,
+        "balance": 896.55,
+        "day_pnl": 238.01,
+        "mll": -3603.45,
         "locked_trader": 0.0,
-        "win_days_cycle": 5
+        "win_days_cycle": 4,
+        "contracts": 3
       },
       {
         "date": "2025-07-18",
-        "balance": 1770.82,
-        "day_pnl": -470.55,
+        "balance": 354.16,
+        "day_pnl": -94.11,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 0
+        "locked_trader": 403.45,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-19",
-        "balance": 1762.62,
-        "day_pnl": -8.2,
+        "balance": 352.52,
+        "day_pnl": -1.64,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 0
+        "locked_trader": 403.45,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-20",
-        "balance": 1663.94,
-        "day_pnl": -98.68,
+        "balance": 332.79,
+        "day_pnl": -19.74,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 0
+        "locked_trader": 403.45,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-21",
-        "balance": 1971.88,
-        "day_pnl": 307.94,
+        "balance": 394.38,
+        "day_pnl": 61.59,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 1
+        "locked_trader": 403.45,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-22",
-        "balance": 1932.58,
-        "day_pnl": -39.29,
+        "balance": 386.52,
+        "day_pnl": -7.86,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 1
+        "locked_trader": 403.45,
+        "win_days_cycle": 0,
+        "contracts": 3
       },
       {
         "date": "2025-07-23",
-        "balance": 3034.33,
-        "day_pnl": 1101.75,
+        "balance": 606.87,
+        "day_pnl": 220.35,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 2
+        "locked_trader": 403.45,
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-24",
-        "balance": 3127.2,
-        "day_pnl": 92.87,
+        "balance": 625.44,
+        "day_pnl": 18.57,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 2
+        "locked_trader": 403.45,
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-25",
-        "balance": 3086.99,
-        "day_pnl": -40.22,
+        "balance": 617.4,
+        "day_pnl": -8.04,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 2
+        "locked_trader": 403.45,
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-26",
-        "balance": 3133.9,
-        "day_pnl": 46.91,
+        "balance": 626.78,
+        "day_pnl": 9.38,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 2
+        "locked_trader": 403.45,
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-27",
-        "balance": 3425.6,
-        "day_pnl": 291.7,
+        "balance": 685.12,
+        "day_pnl": 58.34,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 403.45,
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-28",
-        "balance": 3298.21,
-        "day_pnl": -127.38,
+        "balance": 659.64,
+        "day_pnl": -25.48,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 403.45,
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-29",
-        "balance": 3035.91,
-        "day_pnl": -262.3,
+        "balance": 607.18,
+        "day_pnl": -52.46,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 403.45,
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-30",
-        "balance": 2787.9,
-        "day_pnl": -248.02,
+        "balance": 557.58,
+        "day_pnl": -49.6,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 403.45,
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-07-31",
-        "balance": 2627.27,
-        "day_pnl": -160.63,
+        "balance": 525.45,
+        "day_pnl": -32.13,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 403.45,
+        "win_days_cycle": 1,
+        "contracts": 3
       },
       {
         "date": "2025-08-01",
-        "balance": -361.85,
-        "day_pnl": -2989.12,
+        "balance": -72.37,
+        "day_pnl": -597.82,
         "mll": 0.0,
-        "locked_trader": 2017.23,
-        "win_days_cycle": 3
+        "locked_trader": 403.45,
+        "win_days_cycle": 1,
+        "contracts": 3
       }
     ]
   },
@@ -1248,9 +1397,9 @@
   },
   "express_from_combine_passes": {
     "n": 40,
-    "mll_breach_rate": 1.0,
-    "avg_locked_trader": 2568.0,
-    "payout_hit_rate": 0.95,
+    "mll_breach_rate": 0.925,
+    "avg_locked_trader": 1294.0,
+    "payout_hit_rate": 0.975,
     "path": "standard",
     "note": "Standard-path XFA started the day after random Combine passes."
   }
