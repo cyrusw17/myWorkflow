@@ -1,8 +1,10 @@
 """
-Topstep 150K lab — screen top steady books, then one winner through Combine → XFA.
+Topstep 150K lab — CME futures only.
 
-No challenge-pace / Phase-1 speedups (no pass_defend, challenge_sprint, V4).
-Winner is used as the SINGLE book across Combine + Express Funded.
+Screens futures-native books under Topstep Combine → Express Funded rules,
+then runs ONE winner across the board (no Phase-1 speedups).
+
+Topstep / TopstepX trades futures only — no stocks, FX spot, or CFDs.
 
 Outputs site/data/topstep_lab.json for site/topstep-lab.html.
 """
@@ -16,8 +18,13 @@ from pathlib import Path
 import pandas as pd
 
 from src.data import load_universe
-from src.ftmo_strategies import FTMO_TICKERS, TOP10_V1_IDS, V1_BUILDERS, V1_META
 from src.metrics import summarize
+from src.topstep_futures import (
+    FUTURES_BUILDERS,
+    FUTURES_CANDIDATES,
+    FUTURES_META,
+    TOPSTEP_FUTURES,
+)
 from src.topstep_rules import (
     Topstep150k,
     random_combine_starts,
@@ -35,38 +42,6 @@ RULES = Topstep150k()
 MC_DRAWS = 150
 MC_SEED = 42
 SCREEN_DRAWS = 80
-
-# Phase-1 "speedup" books — excluded from Topstep screening
-EXCLUDE_IDS = {
-    "pass_defend",
-    "pass_defend_active",
-    "challenge_sprint",
-}
-
-# Extra steady V1 books worth trying under Topstep rules
-EXTRA_CANDIDATES = [
-    "risk_parity_vt10",
-    "risk_parity_vt7",
-    "rp_dual_blend",
-    "rp_dual_blend_active",
-    "index_grind_vt10",
-    "index_grind_vt6",
-    "dual_mom_vt8",
-    "ftmo_grind",
-    "gold_fx_vt6",
-    "tsmom_multi_vt8",
-]
-
-
-def _candidate_ids() -> list[str]:
-    seen: set[str] = set()
-    out: list[str] = []
-    for sid in list(TOP10_V1_IDS) + EXTRA_CANDIDATES:
-        if sid in EXCLUDE_IDS or sid in seen or sid not in V1_BUILDERS:
-            continue
-        seen.add(sid)
-        out.append(sid)
-    return out
 
 
 def _downsample_curve(curve: list[dict], step: int = 2) -> list[dict]:
@@ -87,15 +62,15 @@ def _rank_key(row: dict) -> tuple:
 
 
 def main() -> dict:
-    cands = _candidate_ids()
-    print(f"Loading universe for Topstep lab · screening {len(cands)} steady books…")
-    prices = load_universe(FTMO_TICKERS, start=START)
+    cands = list(FUTURES_CANDIDATES)
+    print(f"Loading CME futures universe · screening {len(cands)} futures books…")
+    prices = load_universe(TOPSTEP_FUTURES, start=START)
     end = prices.index[-1]
     two_y = end - pd.Timedelta(days=365 * 2 + 14)
     prices = prices.loc[prices.index >= two_y]
     print(
-        f"Prices: {prices.shape[0]} days × {prices.shape[1]}  "
-        f"({prices.index[0].date()} → {prices.index[-1].date()})"
+        f"Futures: {prices.shape[0]} days × {prices.shape[1]}  "
+        f"({prices.index[0].date()} → {prices.index[-1].date()}) · {list(prices.columns)}"
     )
 
     screen_rows: list[dict] = []
@@ -103,7 +78,7 @@ def main() -> dict:
 
     for sid in cands:
         print(f"  screen {sid}…")
-        rets = V1_BUILDERS[sid](prices).reindex(prices.index).fillna(0.0)
+        rets = FUTURES_BUILDERS[sid](prices).reindex(prices.index).fillna(0.0)
         dollars = returns_to_dollars(rets, RULES)
         dollar_cache[sid] = dollars
         mc = summarize_combines(
@@ -111,12 +86,13 @@ def main() -> dict:
                 dollars, n_draws=SCREEN_DRAWS, seed=MC_SEED, rules=RULES
             )
         )
-        meta = V1_META.get(sid)
+        meta = FUTURES_META.get(sid)
         screen_rows.append(
             {
                 "id": sid,
                 "name": meta.name if meta else sid,
                 "family": meta.family if meta else "",
+                "markets": meta.markets if meta else "",
                 "pass_rate": mc["pass_rate"],
                 "fail_mll_rate": mc["fail_mll_rate"],
                 "timeout_rate": mc["timeout_rate"],
@@ -128,19 +104,22 @@ def main() -> dict:
         )
 
     screen_rows.sort(key=_rank_key)
-    winner_id = screen_rows[0]["id"] if screen_rows else "risk_parity_vt10"
+    winner_id = screen_rows[0]["id"] if screen_rows else "futs_rp_vt10"
     print(
         f"Winner: {winner_id} "
         f"(pass={screen_rows[0]['pass_rate']:.1%} fail={screen_rows[0]['fail_mll_rate']:.1%})"
     )
 
-    meta = V1_META[winner_id]
-    rets = V1_BUILDERS[winner_id](prices).reindex(prices.index).fillna(0.0)
-    dollars = dollar_cache[winner_id] if winner_id in dollar_cache else returns_to_dollars(rets, RULES)
+    meta = FUTURES_META[winner_id]
+    rets = FUTURES_BUILDERS[winner_id](prices).reindex(prices.index).fillna(0.0)
+    dollars = (
+        dollar_cache[winner_id]
+        if winner_id in dollar_cache
+        else returns_to_dollars(rets, RULES)
+    )
     metrics = summarize(rets, winner_id)
 
     combine = simulate_combine(dollars, 0, RULES)
-    # If calendar start fails/times out, show a representative Random-pass Combine for charts
     if combine.status != "pass":
         for att in random_combine_starts(
             dollars, n_draws=MC_DRAWS, seed=MC_SEED, rules=RULES
@@ -154,7 +133,6 @@ def main() -> dict:
                 break
     print(f"Combine display: {combine.status} days={combine.days} bal=${combine.end_balance:,.0f}")
 
-    # Express starts the day after Combine pass when possible
     if combine.status == "pass" and combine.curve:
         end_date = pd.Timestamp(combine.curve[-1]["date"])
         try:
@@ -165,6 +143,7 @@ def main() -> dict:
         xfa_start = 0
     if xfa_start >= len(dollars) - 20:
         xfa_start = max(0, len(dollars) // 3)
+
     xfa_std = simulate_xfa(dollars, xfa_start, RULES, path="standard")
     xfa_con = simulate_xfa(dollars, xfa_start, RULES, path="consistency")
     print(
@@ -220,10 +199,16 @@ def main() -> dict:
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "disclaimer": (
-            "Research approximation of Topstep 150K Trading Combine® + Express Funded rules. "
-            "Daily multi-asset return proxies ≠ TopstepX futures fills, fees, or scaling plan. "
-            "Verify live rules at topstep.com before purchasing."
+            "Topstep is futures-only (CME via TopstepX). This lab uses continuous futures "
+            "proxies (Yahoo =F) under 150K Combine → Express Funded rules — not live fills, "
+            "fees, margins, or session filters. Verify at topstep.com before purchasing."
         ),
+        "market": {
+            "venue": "CME futures (TopstepX)",
+            "asset_class": "futures_only",
+            "tickers": list(prices.columns),
+            "note": "No stocks, ETF cash legs, FX spot, or CFDs — futures continuous contracts only.",
+        },
         "brand": {
             "name": "Topstep",
             "product": "150K Buying Power · Trading Combine → Express Funded",
@@ -239,18 +224,19 @@ def main() -> dict:
             "name": meta.name,
             "family": meta.family,
             "thesis": meta.thesis,
+            "markets": meta.markets,
             "note": (
-                "Single book for Combine and Express — screened from top steady V1 books. "
-                "No challenge-pace / pass-defend / Phase-1 speedups."
+                "Single CME futures book for Combine and Express — screened from futures-native "
+                "strategies only. No equity/CFD proxies, no Phase-1 speedups."
             ),
         },
         "screen": {
             "n_candidates": len(screen_rows),
-            "excluded": sorted(EXCLUDE_IDS),
+            "excluded": ["equity_books", "fx_spot", "cfds", "phase1_speedups"],
             "screen_draws": SCREEN_DRAWS,
             "seed": MC_SEED,
-                "note": (
-                "Ranked by (pass_rate − fail_mll_rate), then avg days to pass. "
+            "note": (
+                "Futures-only screen ranked by (pass_rate − fail_mll_rate), then avg days. "
                 "Winner used as the only Topstep book."
             ),
             "rows": screen_rows,
@@ -268,7 +254,7 @@ def main() -> dict:
             "winning_day_dollars": RULES.winning_day_dollars,
             "trader_split": RULES.trader_split,
             "position_rules": {
-                "combine": f"Hard cap {RULES.max_contracts} mini contracts (150 micros).",
+                "combine": f"Hard cap {RULES.max_contracts} mini futures contracts (150 micros).",
                 "xfa_scaling_150k": [
                     {"balance_lt": 1500, "contracts": 3},
                     {"balance_lt": 2000, "contracts": 4},
@@ -291,9 +277,10 @@ def main() -> dict:
             },
         },
         "rules_notes": [
+            "Topstep / TopstepX = CME futures only (no stocks, FX spot, or CFDs).",
             f"${RULES.buying_power:,.0f} buying power · profit target ${RULES.profit_target:,.0f} · MLL ${RULES.max_loss_limit:,.0f}.",
-            f"Max position: Combine hard-capped at {RULES.max_contracts} mini contracts (PnL clipped to full-size day ceiling).",
-            "XFA Scaling Plan (150K): 3 → 4 → 5 → 10 → 15 contracts by prior EOD balance tiers ($0 / $1.5k / $2k / $3k / $4.5k+).",
+            f"Max position: Combine hard-capped at {RULES.max_contracts} mini futures contracts.",
+            "XFA Scaling Plan (150K): 3 → 4 → 5 → 10 → 15 contracts by prior EOD balance tiers.",
             "Combine: best day ≤ 50% of total profit or keep trading until consistency clears.",
             "XFA Standard: 5 winning days of $150+ → withdraw ≤50% of balance, cap $5,000, keep 90%.",
             "XFA Consistency: ≥3 trading days + 40% consistency → withdraw ≤50%, cap $6,000, keep 90%.",
@@ -304,6 +291,8 @@ def main() -> dict:
             "start": str(prices.index[0].date()),
             "end": str(prices.index[-1].date()),
             "n_days": int(len(prices)),
+            "n_futures": int(prices.shape[1]),
+            "tickers": list(prices.columns),
         },
         "metrics": metrics,
         "combine": {
@@ -348,7 +337,7 @@ def main() -> dict:
             **mc,
             "n_draws": MC_DRAWS,
             "seed": MC_SEED,
-            "note": "Random Combine launches — fail = hit trailing $4,500 MLL.",
+            "note": "Random Combine launches on futures PnL — fail = hit trailing $4,500 MLL.",
         },
         "express_from_combine_passes": {
             "n": len(xfa_from_passes),

@@ -31,8 +31,9 @@ Express Funded Account (XFA) — Official Topstep rules (Jun 2025+):
     - Withdraw up to 50% of reward balance, capped at $6,000
     - Trader keeps 90%
 
-Research proxy: multi-asset daily returns are scaled to dollar PnL on the
-$150k buying-power notional. Not live TopstepX fills, fees, or contract margins.
+Research proxy: continuous CME futures daily returns (=F) scaled to dollar PnL
+under the 150K buying-power / contract limits. Not live TopstepX fills, fees,
+or contract margins. Topstep trades futures only.
 """
 
 from __future__ import annotations

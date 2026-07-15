@@ -145,8 +145,8 @@
     <p class="brand-mark">Top<span>step</span></p>
     <h1>Trading Combine lab</h1>
     <p class="sub">
-      Screen top steady books under Topstep rules, then run <strong>one</strong> winner across
-      Combine → Express Funded — no challenge-pace speedups.
+      Screen <strong>CME futures</strong> books under Topstep rules, then run <strong>one</strong> winner across
+      Combine → Express Funded — futures only (no stocks / FX spot / CFDs), no challenge-pace speedups.
       Account: <strong>$150K</strong> · target <strong>$9,000</strong> · MLL <strong>$4,500</strong> ·
       max position <strong>15</strong> (Combine flat / XFA scaling).
       XFA payouts follow official Standard / Consistency paths (90/10).
@@ -179,13 +179,14 @@
     <p class="hint" id="disclaimer"></p>
 
     <section class="panel">
-      <h2>Strategy — one book only</h2>
+      <h2>Strategy — one CME futures book</h2>
       <div class="box primary" id="stratCard"></div>
+      <p class="hint" id="marketHint" style="margin-top:0.75rem"></p>
     </section>
 
     <section class="panel">
-      <h2>Steady-book screen (Topstep Combine MC)</h2>
-      <p class="hint" id="screenHint">Ranked by (pass − MLL fail), then days to pass — Phase-1 speedups excluded.</p>
+      <h2>Futures-book screen (Topstep Combine MC)</h2>
+      <p class="hint" id="screenHint">CME futures only — ranked by (pass − MLL fail), then days to pass.</p>
       <div style="overflow-x:auto">
         <table>
           <thead>
@@ -276,23 +277,31 @@
 
       document.getElementById("stratCard").innerHTML = `
         <h3>${strat.name || strat.id || "—"}</h3>
-        <p><strong style="color:var(--ink)">${strat.id || ""}</strong> · ${strat.family || ""}</p>
+        <p><strong style="color:var(--ink)">${strat.id || ""}</strong> · ${strat.family || ""} · futures</p>
         <p>${strat.thesis || ""}</p>
+        <p>Markets: <strong style="color:var(--ink)">${strat.markets || "CME"}</strong></p>
         <p>${strat.note || ""}</p>
         <p>Sharpe ${num(data.metrics?.sharpe)} · CAGR ${pct(data.metrics?.cagr)} · MaxDD ${pct(data.metrics?.max_dd)}</p>
         <a class="select-btn" href="https://www.topstep.com/" target="_blank" rel="noopener">Select · Topstep</a>
       `;
 
+      const market = data.market || {};
+      const uni = data.universe || {};
+      document.getElementById("marketHint").textContent =
+        (market.note || "Futures only.") +
+        (uni.tickers ? " Universe: " + uni.tickers.join(", ") + "." : "");
+
       const screen = data.screen || {};
       document.getElementById("screenHint").textContent =
         screen.note ||
-        "Ranked by (pass − MLL fail), then days to pass — Phase-1 speedups excluded.";
+        "CME futures only — ranked by (pass − MLL fail), then days to pass.";
       document.getElementById("screenBody").innerHTML = (screen.rows || [])
         .map((r, i) => {
           const win = r.id === strat.id;
           return `<tr style="${win ? "background:#10182e" : ""}">
             <td>${i + 1}</td>
-            <td>${win ? "<strong>" : ""}${r.name || r.id}${win ? " · winner</strong>" : ""}</td>
+            <td>${win ? "<strong>" : ""}${r.name || r.id}${win ? " · winner</strong>" : ""}
+              <div style="color:var(--muted);font-size:0.75rem">${r.markets || ""}</div></td>
             <td class="num">${pct(r.pass_rate)}</td>
             <td class="num ${(r.fail_mll_rate || 0) > 0 ? "down" : "up"}">${pct(r.fail_mll_rate)}</td>
             <td class="num">${pct(r.timeout_rate)}</td>
