@@ -38,7 +38,9 @@ You are shipping a reproducible research lab + public results page.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m src.run_bakeoff
-# open site/index.html locally, or view GitHub Pages after Actions deploy
+# open https://cyrusw17.github.io/myWorkflow/ (or /site/) after Actions deploy
+# Labs: /ftmo-lab.html · /funded-lab.html · /rp-dual-lab.html (also under /site/)
+
 ```
 
 ## Repo layout

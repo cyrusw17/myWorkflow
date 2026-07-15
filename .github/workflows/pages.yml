@@ -39,11 +39,26 @@ jobs:
         run: |
           test -f site/data/bakeoff.json || (echo "Missing site/data/bakeoff.json" && exit 1)
 
+      - name: Stage publish tree (root + /site mirrors)
+        run: |
+          # Actions previously published only site/ → URLs at /.
+          # Branch-root legacy build used /site/ and a root redirect to site/.
+          # Publish BOTH layouts so neither URL shape 404s after a race.
+          mkdir -p public/site/data public/data
+          cp site/*.html public/
+          cp site/*.html public/site/
+          cp site/data/* public/data/
+          cp site/data/* public/site/data/
+          # Keep root lab JSON in sync for local/legacy checkouts too
+          cp site/data/*.json data/ 2>/dev/null || true
+          touch public/.nojekyll
+          ls -la public public/site public/data | head -40
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: public
 
       - id: deployment
         uses: actions/deploy-pages@v4
