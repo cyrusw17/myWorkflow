@@ -236,7 +236,14 @@
 
     <section class="panel">
       <h2>Top books overlay (6M)</h2>
+      <p class="hint"><strong style="color:var(--bad)">Red ×</strong> marks any closed day that would have killed the account on the −5% daily-loss rule.</p>
       <div class="chart-box sm"><canvas id="overlayChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>5% daily-loss kill days</h2>
+      <p class="hint">Every book that closed through <code>day_start − 5% × initial</code>. Safe books (including the winner) stay empty — this panel shows the ones that would have been account-killed.</p>
+      <div class="chart-box"><canvas id="killChart"></canvas></div>
     </section>
 
     <section class="panel">
@@ -670,17 +677,40 @@
       };
       drawFocus("6M");
 
-      // Overlay top 5 on 6M
+      // Overlay top 5 on 6M — red × marks any 5% daily-loss kill day on each path
       const top5 = strat.slice(0, 5);
-      const base = data.curves_6m?.[top5[0]?.id] || [];
+      const curve6 = data.curves_6m || {};
+      const curve2y = data.curves || {};
+      const base = curve6[top5[0]?.id] || [];
+      const killOverlay = (curve, label, color) => {
+        const killN = (curve || []).filter((p) => p.daily_kill).length;
+        if (!killN) return null;
+        return {
+          label: `${label} · 5% KILL (${killN})`,
+          data: (curve || []).map((p) => (p.daily_kill ? p.equity : null)),
+          borderColor: color,
+          backgroundColor: "#f07178",
+          showLine: false,
+          pointStyle: "crossRot",
+          pointRadius: (curve || []).map((p) => (p.daily_kill ? 7 : 0)),
+          pointBorderWidth: 2,
+          pointBorderColor: "#f07178",
+          order: 0,
+        };
+      };
       const overlaySets = top5.map((s, i) => ({
         label: s.name,
-        data: (data.curves_6m?.[s.id] || []).map((p) => p.equity),
+        data: (curve6[s.id] || []).map((p) => p.equity),
         borderColor: COLORS[i % COLORS.length],
         tension: 0.05,
         pointRadius: 0,
         borderWidth: i === 0 ? 2.4 : 1.5,
+        order: 2,
       }));
+      top5.forEach((s, i) => {
+        const mark = killOverlay(curve6[s.id] || curve2y[s.id], s.name, COLORS[i % COLORS.length]);
+        if (mark) overlaySets.push(mark);
+      });
       if (base.length) {
         overlaySets.push({
           label: "10% max-loss floor (0.90)",
@@ -690,8 +720,13 @@
           tension: 0,
           pointRadius: 0,
           borderWidth: 1.8,
+          order: 3,
         });
       }
+      const topKillN = top5.reduce(
+        (n, s) => n + (curve6[s.id] || curve2y[s.id] || []).filter((p) => p.daily_kill).length,
+        0,
+      );
       charts.push(new Chart(document.getElementById("overlayChart"), {
         type: "line",
         data: {
@@ -702,7 +737,14 @@
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            title: { display: true, text: "Top books vs 10% static floor · 6M", color: "#8aa397", font: { size: 12 } },
+            title: {
+              display: true,
+              text: topKillN
+                ? `Top books vs 10% floor · 6M · ${topKillN} daily-loss kill day(s) marked`
+                : "Top books vs 10% static floor · 6M · no 5% daily kills in top books",
+              color: topKillN ? "#f07178" : "#8aa397",
+              font: { size: 12 },
+            },
             legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 11 } } },
           },
           scales: {
@@ -711,6 +753,79 @@
           },
         },
       }));
+
+      // Killer books chart — paths that actually breached the 5% daily-loss rule
+      const killBooks = Object.keys(curve2y)
+        .map((id) => {
+          const c = curve2y[id] || [];
+          const killDates = c.filter((p) => p.daily_kill);
+          return { id, name: (strat.find((s) => s.id === id) || {}).name || id, curve: c, killN: killDates.length };
+        })
+        .filter((x) => x.killN > 0)
+        .sort((a, b) => b.killN - a.killN);
+      const killCanvas = document.getElementById("killChart");
+      if (killCanvas && killBooks.length) {
+        const axis = killBooks[0].curve;
+        const killSets = killBooks.slice(0, 5).map((b, i) => ({
+          label: `${b.name} (${b.killN} kills)`,
+          data: b.curve.map((p) => p.equity),
+          borderColor: COLORS[(i + 3) % COLORS.length],
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: 1.6,
+          order: 2,
+        }));
+        killBooks.slice(0, 5).forEach((b, i) => {
+          killSets.push({
+            label: `${b.name} · × kill days`,
+            data: b.curve.map((p) => (p.daily_kill ? p.equity : null)),
+            borderColor: "#f07178",
+            backgroundColor: "#f07178",
+            showLine: false,
+            pointStyle: "crossRot",
+            pointRadius: b.curve.map((p) => (p.daily_kill ? 8 : 0)),
+            pointBorderWidth: 2,
+            order: 0,
+          });
+        });
+        killSets.push({
+          label: "10% max-loss floor (0.90)",
+          data: axis.map(() => lim.max_loss_floor ?? 0.9),
+          borderColor: "#f07178",
+          borderDash: [6, 4],
+          tension: 0,
+          pointRadius: 0,
+          borderWidth: 1.8,
+          order: 3,
+        });
+        const totalKills = killBooks.reduce((n, b) => n + b.killN, 0);
+        charts.push(new Chart(killCanvas, {
+          type: "line",
+          data: { labels: axis.map((p) => p.date), datasets: killSets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: `Kill-day museum · ${killBooks.length} book(s) · ${totalKills} day(s) that would have killed on −5% daily`,
+                color: "#f07178",
+                font: { size: 12 },
+              },
+              legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 10 } } },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, suggestedMin: 0.85 },
+            },
+          },
+        }));
+      } else if (killCanvas) {
+        killCanvas.parentElement.insertAdjacentHTML(
+          "beforeend",
+          `<p class="hint" style="padding:0.75rem 1rem">No strategy in this bake-off closed a day through the −5% daily-loss limit.</p>`,
+        );
+      }
     }
 
     main().catch((e) => {
