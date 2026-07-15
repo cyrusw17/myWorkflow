@@ -205,6 +205,7 @@
               <th>CAGR</th>
               <th>MaxDD</th>
               <th>Locked pay</th>
+              <th>Active days</th>
               <th>Fund breach</th>
               <th>Unpaid lost</th>
               <th>vs hoard lost</th>
@@ -241,6 +242,12 @@
       <h2>Top books overlay (6M)</h2>
       <p class="hint"><strong style="color:var(--bad)">Red ×</strong> marks any closed day that would have killed the account on the −$1,250 daily-loss rule.</p>
       <div class="chart-box sm"><canvas id="overlayChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Pass-then-defend → Active (trade more often)</h2>
+      <p class="hint" id="siblingHint">Higher-frequency sibling of the top book: shorter lookbacks, fast TSMOM sleeve, softer brake.</p>
+      <div class="chart-box"><canvas id="siblingChart"></canvas></div>
     </section>
 
     <section class="panel">
@@ -547,11 +554,13 @@
         card("Least failures", `<p><strong style="color:var(--ink)">${ch.least_fails?.name || "—"}</strong></p><p>Fail rate ${pct(ch.least_fails?.fail_rate)} · ${ch.least_fails?.fails || 0} fails / ${ch.least_fails?.attempts || 0} scored attempts</p>`),
         card("Best paycheck (funded)", `<p><strong style="color:var(--ink)">${ch.best_paycheck?.name || "—"}</strong></p><p>Avg locked trader payout ${pct(ch.best_paycheck?.avg_locked_trader)} · funded breach ${pct(ch.best_paycheck?.fund_breach_rate)}</p><p>Unpaid lost if paying out ${pct(ch.best_paycheck?.avg_unpaid_lost)} vs hoarding ${pct(ch.best_paycheck?.hoard_unpaid_lost)}</p><p>${ch.best_paycheck?.note || ""}</p>`),
         card("Most room to improve", `<p><strong style="color:var(--ink)">${ch.most_room_to_improve?.name || "—"}</strong></p><p>Improvement ${num(ch.most_room_to_improve?.improvement_room, 3)}</p><p>${ch.most_room_to_improve?.note || ""}</p>`),
+        card("Trade-more sibling", `<p><strong style="color:var(--ink)">${ch.active_sibling?.active_name || "—"}</strong></p><p>Active days ${pct(ch.active_sibling?.active_active_day_rate)} vs base ${pct(ch.active_sibling?.base_active_day_rate)} · flat ${pct(ch.active_sibling?.active_flat_day_rate)} vs ${pct(ch.active_sibling?.base_flat_day_rate)}</p><p>Composite ${num(ch.active_sibling?.active_composite, 3)} vs base ${num(ch.active_sibling?.base_composite, 3)}</p><p>${ch.active_sibling?.note || ""}</p>`),
       ].join("");
 
       document.querySelector("#stratTable tbody").innerHTML = strat.map((s) => {
         const c = s.full_2y.challenge;
         const m = s.full_2y.metrics;
+        const act = s.activity || {};
         return `<tr>
           <td>${s.rank}</td>
           <td><strong>${s.name}</strong><div class="hint" style="margin:0">${s.family} · ${s.markets}</div></td>
@@ -566,6 +575,7 @@
           <td class="num">${pct(m.cagr)}</td>
           <td class="num ${Math.abs(m.max_dd) > 0.1 ? "down" : ""}">${pct(m.max_dd)}</td>
           <td class="num up">${pct(s.full_2y.funded_payout?.avg_locked_trader)}</td>
+          <td class="num ${(act.active_day_rate || 0) > 0.9 ? "up" : ""}">${pct(act.active_day_rate)}</td>
           <td class="num ${(s.full_2y.funded_payout?.breach_rate || 0) > 0.1 ? "down" : "up"}">${pct(s.full_2y.funded_payout?.breach_rate)}</td>
           <td class="num">${pct(s.full_2y.funded_payout?.avg_unpaid_lost)}</td>
           <td class="num">${pct(s.full_2y.funded_hoard?.avg_unpaid_lost)}</td>
@@ -805,6 +815,92 @@
           },
         },
       }));
+
+      // Sibling: pass_defend vs pass_defend_active (trade more often)
+      const sib = ch.active_sibling || {};
+      const sibHint = document.getElementById("siblingHint");
+      if (sibHint && sib.note) {
+        sibHint.innerHTML = `${sib.note} Active days <strong style="color:var(--ok)">${pct(sib.active_active_day_rate)}</strong> vs base <strong>${pct(sib.base_active_day_rate)}</strong> · flat <strong style="color:var(--ok)">${pct(sib.active_flat_day_rate)}</strong> vs <strong>${pct(sib.base_flat_day_rate)}</strong>.`;
+      }
+      const sibCurves = data.sibling_focus_curves || {};
+      const baseSib = sibCurves.base_6m || curve6.pass_defend || [];
+      const actSib = sibCurves.active_6m || curve6.pass_defend_active || [];
+      const sibCanvas = document.getElementById("siblingChart");
+      if (sibCanvas && (baseSib.length || actSib.length)) {
+        const axis = actSib.length >= baseSib.length ? actSib : baseSib;
+        charts.push(new Chart(sibCanvas, {
+          type: "line",
+          data: {
+            labels: axis.map((p) => p.date),
+            datasets: [
+              {
+                label: `${sib.base_name || "Pass-then-defend"} equity ($)`,
+                data: baseSib.map((p) => p.equity_dollars ?? p.equity),
+                borderColor: "#7aa2ff",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.8,
+                order: 2,
+              },
+              {
+                label: `${sib.active_name || "Active"} equity ($)`,
+                data: actSib.map((p) => p.equity_dollars ?? p.equity),
+                borderColor: "#3dd6c6",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.4,
+                order: 2,
+              },
+              {
+                label: `${sib.base_name || "Base"} profit locked`,
+                data: baseSib.map((p) => p.profit_tally_dollars ?? null),
+                borderColor: "#c4b5fd",
+                borderDash: [4, 3],
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.4,
+                order: 1,
+              },
+              {
+                label: `${sib.active_name || "Active"} profit locked`,
+                data: actSib.map((p) => p.profit_tally_dollars ?? null),
+                borderColor: "#f0a34a",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.0,
+                order: 1,
+              },
+              {
+                label: "$20k floor",
+                data: axis.map(() => lim.max_loss_floor_dollars ?? 20000),
+                borderColor: "#f07178",
+                borderDash: [6, 4],
+                pointRadius: 0,
+                borderWidth: 1.6,
+                tension: 0,
+                order: 3,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: `6M · Active ${pct(sib.active_active_day_rate)} days in market vs base ${pct(sib.base_active_day_rate)}`,
+                color: "#8aa397",
+                font: { size: 12 },
+              },
+              legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 10 } } },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
+            },
+          },
+        }));
+      }
 
       // Killer books — paths that breached −$1,250 daily
       const killBooks = Object.keys(curve2y)

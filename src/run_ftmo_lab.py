@@ -52,6 +52,23 @@ PAYOUT = PayoutPolicy(
 FUNDED_STEP = 10
 
 
+def activity_stats(rets: pd.Series) -> dict:
+    """How often the book is actually in the market (vs flat / micro)."""
+    r = rets.fillna(0.0)
+    n = max(len(r), 1)
+    abs_r = r.abs()
+    active = abs_r > 1e-8
+    return {
+        "active_day_rate": round(float(active.mean()), 4),
+        "flat_day_rate": round(float((abs_r < 1e-10).mean()), 4),
+        "micro_day_rate": round(float((abs_r < 0.0005).mean()), 4),
+        "mean_abs_return": round(float(abs_r.mean()), 6),
+        "turnover_proxy": round(float(r.diff().abs().mean()), 6),
+        "n_active_days": int(active.sum()),
+        "n_days": int(n),
+    }
+
+
 def _curve(rets: pd.Series, step: int = 1, *, daily_loss: float | None = None) -> list[dict]:
     """Equity under daily profit-withdraw; marks kill days ($1,250 daily or $5k max)."""
     del daily_loss  # limits come from RULES
@@ -467,6 +484,7 @@ def run() -> dict:
         funded = summarize_funded(funded_paths)
         hoard = summarize_funded(hoard_paths)
         scores = score_strategy(full["chal"], full["metrics"], recent, funded, hoard)
+        activity = activity_stats(rets)
 
         headroom = full["chal"].get("avg_room_on_pass")
         fail_n = full["chal"]["fails"]
@@ -477,6 +495,7 @@ def run() -> dict:
             "thesis": meta.thesis,
             "markets": meta.markets,
             "scores": scores,
+            "activity": activity,
             "full_2y": {
                 "metrics": full["metrics"],
                 "challenge": full["chal"],
@@ -505,7 +524,7 @@ def run() -> dict:
             f"    2Y pass={full['chal']['full_pass_rate']:.1%} fail={full['chal']['fail_rate']:.1%} "
             f"fundBreach={funded['breach_rate']:.1%} locked={funded['avg_locked_trader']:.1%} "
             f"lostOpen={funded['avg_unpaid_lost']:.2%} Sharpe={full['metrics']['sharpe']:.2f} "
-            f"composite={scores['composite']:.3f}"
+            f"active={activity['active_day_rate']:.0%} composite={scores['composite']:.3f}"
         )
 
     rows.sort(key=lambda r: r["scores"]["composite"], reverse=True)
@@ -548,6 +567,10 @@ def run() -> dict:
             -r["full_2y"]["funded_payout"]["breach_rate"],
         ),
     )
+    most_active = max(rows, key=lambda r: r.get("activity", {}).get("active_day_rate", 0.0))
+    by_id = {r["id"]: r for r in rows}
+    active_sibling = by_id.get("pass_defend_active")
+    base_sibling = by_id.get("pass_defend")
 
     # Winner recent window curves for UI
     winner_rets = STRATEGY_BUILDERS[winner["id"]](prices).reindex(prices.index).fillna(0.0)
@@ -666,9 +689,37 @@ def run() -> dict:
                 "hoard_unpaid_lost": best_paycheck["full_2y"]["funded_hoard"]["avg_unpaid_lost"],
                 "note": "Best locked payout stream under the pay-yourself-out policy (80% trader split).",
             },
+            "most_active": {
+                "id": most_active["id"],
+                "name": most_active["name"],
+                "active_day_rate": most_active.get("activity", {}).get("active_day_rate"),
+                "flat_day_rate": most_active.get("activity", {}).get("flat_day_rate"),
+                "composite": most_active["scores"]["composite"],
+                "note": "Highest share of non-flat trading days under the $25k closed-withdraw model.",
+            },
+            "active_sibling": {
+                "base_id": "pass_defend",
+                "active_id": "pass_defend_active",
+                "base_name": (base_sibling or {}).get("name"),
+                "active_name": (active_sibling or {}).get("name"),
+                "base_active_day_rate": (base_sibling or {}).get("activity", {}).get("active_day_rate"),
+                "active_active_day_rate": (active_sibling or {}).get("activity", {}).get("active_day_rate"),
+                "base_flat_day_rate": (base_sibling or {}).get("activity", {}).get("flat_day_rate"),
+                "active_flat_day_rate": (active_sibling or {}).get("activity", {}).get("flat_day_rate"),
+                "base_composite": (base_sibling or {}).get("scores", {}).get("composite"),
+                "active_composite": (active_sibling or {}).get("scores", {}).get("composite"),
+                "note": (
+                    "Pass-then-defend · Active is the higher-frequency sibling of the top book: "
+                    "shorter momentum lookbacks, fast TSMOM sleeve, softer brake → far fewer flat days."
+                ),
+            },
         },
         "strategies": rows,
         "winner_focus_curves": focus_curves,
+        "sibling_focus_curves": {
+            "base_6m": curves.get("pass_defend__6m", []),
+            "active_6m": curves.get("pass_defend_active__6m", []),
+        },
         "risk_visuals": risk_visuals,
         "curves": {r["id"]: curves[r["id"]] for r in rows},
         "curves_6m": {r["id"]: curves[f"{r['id']}__6m"] for r in rows},
@@ -692,6 +743,7 @@ def run() -> dict:
                 "Cut sleeve vol so worst day PnL stays well inside −$1,250.",
                 "Prefer books whose closed-withdraw path never touches the $20k floor.",
                 "Raise vol slowly only while rolling fail rate stays <10% AND funded breach stays near 0.",
+                "If the winner sits flat too often, try Pass-then-defend · Active (same skeleton, shorter signals + softer brake).",
             ],
         },
     }
@@ -727,6 +779,14 @@ def run() -> dict:
         f"fundBreach={best_paycheck['full_2y']['funded_payout']['breach_rate']:.1%}",
         f"hoardLost={best_paycheck['full_2y']['funded_hoard']['avg_unpaid_lost']:.1%}",
     )
+    if active_sibling and base_sibling:
+        print(
+            "Active sibling:",
+            active_sibling["name"],
+            f"active={active_sibling['activity']['active_day_rate']:.0%}",
+            f"(base {base_sibling['activity']['active_day_rate']:.0%} flat→{base_sibling['activity']['flat_day_rate']:.0%})",
+            f"composite={active_sibling['scores']['composite']:.3f}",
+        )
     return payload
 
 

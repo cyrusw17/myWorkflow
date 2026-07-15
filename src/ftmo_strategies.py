@@ -332,6 +332,48 @@ def strat_pass_then_defend(prices: pd.DataFrame) -> pd.Series:
     return apply_daily_brake(out, 0.012, 0.022).rename("pass_defend")
 
 
+def strat_pass_then_defend_active(prices: pd.DataFrame) -> pd.Series:
+    """
+    Higher-trade-frequency sibling of pass_defend.
+
+    Same equity-regime skeleton, but:
+      - shorter dual-mom lookback (63d) so absolute-mom cash-outs fire less often
+      - short-horizon multi TSMOM sleeve keeps exposure when dual-mom sits in cash
+      - softer daily brake + faster heal → fewer flat days after a soft down day
+      - milder de-lever after cushion so the book stays in markets more often
+    """
+    dual = strat_dual_mom(prices, lookback=63, target_vol=0.13)
+    # Fast TSMOM sleeve (10/21/42) — more signal flips / continuous exposure
+    cols = _align_cols(prices, FX + INDICES + COMMOD + CRYPTO)
+    px = prices[cols]
+    rets = _safe_rets(px)
+    sig = _tsmom_signal(px, (10, 21, 42))
+    inv = _inverse_vol_weights(rets, lookback=15)
+    w = (sig * inv)
+    gross = w.abs().sum(axis=1).replace(0, np.nan)
+    w = w.div(gross, axis=0).fillna(0.0)
+    fast = _vol_scale_series(_portfolio_from_weights(rets, w, cost_bps=2.5), 0.11, lookback=15, cap=1.8)
+
+    # Short stock rotation for extra turnover when available
+    stocks = strat_xs_mom_stocks(prices, formation=21, n=4, target_vol=0.11)
+
+    base = (
+        0.50 * dual.fillna(0.0)
+        + 0.35 * fast.fillna(0.0)
+        + 0.15 * stocks.fillna(0.0)
+    )
+    eq = (1.0 + base).cumprod()
+    eq_lag = eq.shift(1).fillna(1.0)
+    # Stay in sprint longer; softer defend (keep more exposure after +10%)
+    scale = pd.Series(1.05, index=base.index)
+    scale = scale.where(eq_lag >= 1.03, 1.30)
+    scale = scale.where(eq_lag < 1.12, 0.85)
+    scale = scale.where(eq_lag < 1.08, 0.95)
+    out = (base * scale.clip(0.55, 1.40)).clip(-0.030, 0.030)
+    # Softer brake / faster heal — fewer multi-day flat stretches
+    return apply_daily_brake(out, soft=0.015, hard=0.028, heal=0.28).rename("pass_defend_active")
+
+
 def strat_gold_fx_defensive(prices: pd.DataFrame, target_vol: float = 0.06) -> pd.Series:
     """Defensive: long GLD when rising + FX TSMOM sleeve at low vol."""
     g = _align_cols(prices, ["GLD"])
@@ -345,7 +387,12 @@ def strat_gold_fx_defensive(prices: pd.DataFrame, target_vol: float = 0.06) -> p
     return _vol_scale_series(mix, target_vol, lookback=42, cap=1.3).rename("gold_fx")
 
 
-def apply_daily_brake(rets: pd.Series, soft: float = 0.012, hard: float = 0.025) -> pd.Series:
+def apply_daily_brake(
+    rets: pd.Series,
+    soft: float = 0.012,
+    hard: float = 0.025,
+    heal: float = 0.15,
+) -> pd.Series:
     """
     Path-aware intra-challenge brake using closed days only:
     after a soft down day, cut next-day exposure; after hard, go flat next day.
@@ -361,9 +408,9 @@ def apply_daily_brake(rets: pd.Series, soft: float = 0.012, hard: float = 0.025)
             scale = 0.35
         else:
             # heal toward 1
-            scale = min(1.0, scale + 0.15) if scale < 1.0 else 1.0
+            scale = min(1.0, scale + heal) if scale < 1.0 else 1.0
             if val > 0:
-                scale = min(1.0, scale + 0.1)
+                scale = min(1.0, scale + heal * 0.67)
     return pd.Series(out, index=r.index, name=getattr(rets, "name", "braked"))
 
 
@@ -384,6 +431,7 @@ STRATEGY_BUILDERS: dict[str, callable] = {
     "ftmo_grind_raw": lambda p: strat_ftmo_grind(p, 0.07),
     "challenge_sprint": lambda p: apply_daily_brake(strat_challenge_sprinter(p, 0.12), 0.011, 0.020),
     "pass_defend": lambda p: strat_pass_then_defend(p),
+    "pass_defend_active": lambda p: strat_pass_then_defend_active(p),
     "tsmom_multi_vt8": lambda p: apply_daily_brake(strat_tsmom_multi(p, 0.08), 0.012, 0.022),
     "tsmom_multi_vt12": lambda p: apply_daily_brake(strat_tsmom_multi(p, 0.12), 0.012, 0.022),
     "tsmom_fx_vt8": lambda p: apply_daily_brake(strat_tsmom_fx(p, 0.08), 0.012, 0.022),
@@ -440,6 +488,13 @@ STRATEGY_META: dict[str, StratMeta] = {
         "Pass-then-defend",
         "survival",
         "Sprint while below +10%, de-lever after cushion — regime on lagged equity only",
+        "Multi-asset",
+    ),
+    "pass_defend_active": StratMeta(
+        "pass_defend_active",
+        "Pass-then-defend · Active",
+        "survival",
+        "Higher-frequency sibling of pass_defend: shorter mom lookbacks + fast TSMOM sleeve + softer brake so fewer flat days",
         "Multi-asset",
     ),
     "tsmom_multi_vt8": StratMeta(
