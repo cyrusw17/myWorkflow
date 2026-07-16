@@ -44,15 +44,20 @@ jobs:
           # Actions previously published only site/ → URLs at /.
           # Branch-root legacy build used /site/ and a root redirect to site/.
           # Publish BOTH layouts so neither URL shape 404s after a race.
-          mkdir -p public/site/data public/data
+          mkdir -p public/site/data public/data public/resume public/site/resume
           cp site/*.html public/
           cp site/*.html public/site/
           cp site/data/* public/data/
           cp site/data/* public/site/data/
+          # Nested pages (e.g. resume) — flat *.html copy misses these
+          if [ -d site/resume ]; then
+            cp -R site/resume/. public/resume/
+            cp -R site/resume/. public/site/resume/
+          fi
           # Keep root lab JSON in sync for local/legacy checkouts too
           cp site/data/*.json data/ 2>/dev/null || true
           touch public/.nojekyll
-          ls -la public public/site public/data | head -40
+          ls -la public public/site public/resume public/site/resume | head -50
 
       - uses: actions/configure-pages@v5
 
