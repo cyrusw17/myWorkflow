@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>$25k prop lab — $1,250 daily / $5k max</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg0: #0c1210; --bg1: #14201c; --ink: #e8f0ec; --muted: #8aa397;
+      --line: #24352f; --a: #3dd6c6; --b: #f0a34a; --ok: #7dffb3; --bad: #f07178;
+      --spy: #7aa2ff; --v2: #c4b5fd;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(1100px 560px at 12% -10%, #1a3a32 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #241e18 0%, transparent 52%),
+        var(--bg0);
+      color: var(--ink); min-height: 100vh;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 1.25rem 0.9rem 3.5rem; }
+    @media (min-width: 720px) { main { padding: 2rem 1.25rem 4rem; } }
+    nav.top { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    nav.top a {
+      color: var(--a); text-decoration: none; border: 1px solid var(--line);
+      background: var(--bg1); padding: 0.35rem 0.65rem; font-size: 0.82rem;
+    }
+    nav.top a.here { color: var(--ink); border-color: #2d6b4f; }
+    h1 { font-size: clamp(1.4rem, 5vw, 2.2rem); letter-spacing: -0.03em; margin: 0 0 0.35rem; }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; max-width: 50rem; line-height: 1.45; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    .badge {
+      border: 1px solid var(--line); background: var(--bg1);
+      padding: 0.35rem 0.6rem; font-size: 0.78rem; color: var(--muted);
+    }
+    .badge strong { color: var(--ink); }
+    .badge.ok { border-color: #2d6b4f; color: var(--ok); }
+    .badge.warn { border-color: #6b4a2d; color: var(--b); }
+    .panel {
+      border: 1px solid var(--line); background: rgba(20,32,28,0.85);
+      padding: 0.85rem 0.75rem 0.75rem; margin-bottom: 1rem;
+    }
+    .panel h2 {
+      margin: 0 0 0.75rem; font-size: 0.92rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .hint { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+    .champ-grid {
+      display: grid; grid-template-columns: 1fr; gap: 0.75rem;
+    }
+    @media (min-width: 800px) { .champ-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .box {
+      border: 1px solid var(--line); background: rgba(12,18,16,0.45); padding: 0.75rem;
+    }
+    .box.primary { border-color: #2d6b4f; }
+    .box h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+    .box p, .box li { color: var(--muted); font-size: 0.82rem; line-height: 1.45; margin: 0.25rem 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th, td { text-align: left; padding: 0.45rem 0.35rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .up { color: var(--ok); } .down { color: var(--bad); }
+    .chart-box { position: relative; width: 100%; height: 360px; }
+    .chart-box.sm { height: 280px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+    .tabs button {
+      border: 1px solid var(--line); background: var(--bg1); color: var(--muted);
+      padding: 0.3rem 0.6rem; font-size: 0.78rem; cursor: pointer;
+    }
+    .tabs button.on { color: var(--ink); border-color: #2d6b4f; }
+    .checklist { color: var(--muted); font-size: 0.88rem; line-height: 1.5; padding-left: 1.1rem; }
+    .checklist li { margin-bottom: 0.35rem; }
+    .limits {
+      display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-bottom: 1rem;
+    }
+    @media (min-width: 720px) { .limits { grid-template-columns: 1fr 1fr; } }
+    .limit-card {
+      border: 1px solid var(--line); background: rgba(12,18,16,0.7);
+      padding: 1rem 0.9rem 0.85rem; position: relative; overflow: hidden;
+    }
+    .limit-card.daily { border-color: #6b4a2d; }
+    .limit-card.max { border-color: #6b2d35; }
+    .limit-card .label {
+      color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em;
+      text-transform: uppercase; margin: 0 0 0.35rem;
+    }
+    .limit-card .value {
+      font-size: clamp(1.8rem, 5vw, 2.6rem); font-weight: 700; letter-spacing: -0.03em;
+      margin: 0 0 0.35rem; line-height: 1;
+    }
+    .limit-card.daily .value { color: var(--b); }
+    .limit-card.max .value { color: var(--bad); }
+    .limit-card .desc { color: var(--muted); font-size: 0.82rem; line-height: 1.4; margin: 0; }
+    .meters {
+      display: grid; grid-template-columns: 1fr; gap: 0.65rem; margin-top: 0.85rem;
+    }
+    @media (min-width: 720px) { .meters { grid-template-columns: 1fr 1fr; } }
+    .meter {
+      border: 1px solid var(--line); background: rgba(12,18,16,0.45); padding: 0.7rem 0.75rem;
+    }
+    .meter .top {
+      display: flex; justify-content: space-between; gap: 0.5rem;
+      font-size: 0.78rem; color: var(--muted); margin-bottom: 0.35rem;
+    }
+    .meter .top strong { color: var(--ink); }
+    .meter .bar {
+      height: 0.55rem; background: #24352f; border-radius: 2px; overflow: hidden; position: relative;
+    }
+    .meter .bar > span {
+      display: block; height: 100%; background: var(--a);
+    }
+    .meter .bar.warn > span { background: var(--b); }
+    .meter .bar.bad > span { background: var(--bad); }
+    .meter .bar .kill {
+      position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--bad);
+    }
+    .split-charts {
+      display: grid; grid-template-columns: 1fr; gap: 0.85rem;
+    }
+    @media (min-width: 900px) { .split-charts { grid-template-columns: 1.2fr 0.8fr; } }
+    footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
+    a { color: var(--a); }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="top">
+      <a href="./index.html">Bake-off</a>
+      <a href="./confluence-lab.html">Confluence boost</a>
+      <a href="./dd-lab.html">V2 drawdown lab</a>
+      <a href="./funded-lab.html">Funded prop lab</a>
+      <a class="here" href="./ftmo-lab.html">$25k prop lab</a>
+      <a href="./topstep-lab.html">Topstep 150K</a>
+      <a href="./rp-dual-lab.html">RP + Dual family</a>
+    </nav>
+
+    <h1>$25k prop lab</h1>
+    <p class="sub">
+      Multi-asset quant bakeoff on a <strong>$25,000</strong> account:
+      fixed <strong>$1,250</strong> daily loss · <strong>$5,000</strong> max from start (floor $20k) ·
+      <strong>withdraw closed excess only when ≥ $25k</strong>.
+      Strategies are ranked fail-first against those floors, then by paycheck discipline once funded.
+    </p>
+
+    <div class="limits" id="limitCards"></div>
+    <div class="row" id="badges"></div>
+    <p class="hint" id="disclaimer"></p>
+
+    <section class="panel">
+      <h2>Hard limits — winner vs the kill lines</h2>
+      <p class="hint">
+        Red line = <strong>$20,000 floor</strong> ($5k max loss from $25k start).
+        Orange dashed = <strong>−$1,250</strong> daily-loss reference.
+        Ops: only closed EOD equity counts; withdraw excess above $25k only (nothing while underwater).
+        <strong style="color:var(--b)">Gold line</strong> = cumulative locked profit (only from closed excess above $25k).
+        <strong style="color:var(--ink)">White/teal dashed</strong> = equity + locked profit.
+        <strong style="color:var(--bad)">Red ×</strong> = account kill (−$1,250 daily or −$5k max).
+      </p>
+      <div class="meters" id="headroomMeters"></div>
+      <div class="tabs" id="riskTabs" style="margin-top:0.9rem"></div>
+      <div class="split-charts">
+        <div class="chart-box"><canvas id="equityFloorChart"></canvas></div>
+        <div class="chart-box sm"><canvas id="dailyLimitChart"></canvas></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Breach board — $1,250 daily vs $5k max</h2>
+      <p class="hint">Rolling challenge fails split by rule. Daily loss is usually the account killer industry-wide; we tally both.</p>
+      <div class="chart-box"><canvas id="breachChart"></canvas></div>
+      <div class="chart-box sm" style="margin-top:0.85rem"><canvas id="dailyHistChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Champions</h2>
+      <div class="champ-grid" id="champions"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Winner equity — focus windows</h2>
+      <p class="hint">Winner equity under closed-above-$25k withdrawals. Toggle horizon. <strong style="color:var(--bad)">Red ×</strong> = −$1,250 daily-loss kill day.</p>
+      <div class="tabs" id="focusTabs"></div>
+      <div class="chart-box"><canvas id="focusChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Challenge journey — Phase 1 → Phase 2 → Funded</h2>
+      <p class="hint" id="journeyHint">
+        Continuous path: Phase 1 needs <strong>+10%</strong> (equity stays in-account), then resets to $25k.
+        Phase 2 needs <strong>+5%</strong>, then resets again into an official funded book.
+        After funded, <strong style="color:var(--b)">gold</strong> locks closed excess above $25k.
+      </p>
+      <div class="row" id="journeyBadges"></div>
+      <div class="tabs" id="journeyTabs"></div>
+      <div class="chart-box" style="height:400px"><canvas id="journeyChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Trade-more versions — V2 to V5</h2>
+      <p class="hint" id="versionHint">
+        Each top-10 V1 book gets four activity variants targeting ≥20 trade-days / month via different methods:
+        faster signals, wider liquid universe, sleeve stacking, and an always-in rebalancer.
+      </p>
+      <div class="champ-grid" id="versionMethods"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Random-start challenge stress — Phase 1 &amp; 2</h2>
+      <p class="hint" id="mcHint">
+        Each book is launched from 200 randomly sampled start dates. Fail = hit −$1,250 daily or −$5k max in Phase 1 or 2.
+        Timeouts (too slow) are separate. Prefer books with <strong style="color:var(--ok)">zero P1/P2 fails</strong>.
+      </p>
+      <div class="row" id="mcBadges"></div>
+      <div style="overflow-x:auto">
+        <table id="mcTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Strategy</th>
+              <th>Zero fail</th>
+              <th>MC fail</th>
+              <th>P1 fail</th>
+              <th>P2 fail</th>
+              <th>MC full pass</th>
+              <th>MC avg days</th>
+              <th>P05 / P95 days</th>
+              <th>Attempts</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Strategy board — 2Y challenge tallies</h2>
+      <p class="hint" id="rubric"></p>
+      <div style="overflow-x:auto">
+        <table id="stratTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Strategy</th>
+              <th>Composite</th>
+              <th>Full pass</th>
+              <th>Fail rate</th>
+              <th>MC fail</th>
+              <th>Fails</th>
+              <th>Daily / Max</th>
+              <th>Timeouts</th>
+              <th>Avg days</th>
+              <th>Pace</th>
+              <th>Sharpe</th>
+              <th>CAGR</th>
+              <th>MaxDD</th>
+              <th>Locked pay</th>
+              <th>Trades/mo</th>
+              <th>Fund breach</th>
+              <th>Unpaid lost</th>
+              <th>vs hoard lost</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Recent windows — 6M / 3M / 1M</h2>
+      <p class="hint">Continuous path metrics + single challenge started at window open. Rolling 2-step counts are thin on short horizons (often censored).</p>
+      <div style="overflow-x:auto">
+        <table id="windowTable">
+          <thead>
+            <tr>
+              <th>Strategy</th>
+              <th>Win</th>
+              <th>Return</th>
+              <th>Sharpe</th>
+              <th>MaxDD</th>
+              <th>Single-shot</th>
+              <th>Path daily hits</th>
+              <th>Path max breach</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Top books overlay (6M)</h2>
+      <p class="hint"><strong style="color:var(--bad)">Red ×</strong> marks any closed day that would have killed the account on the −$1,250 daily-loss rule.</p>
+      <div class="chart-box sm"><canvas id="overlayChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Trade-more siblings (6M)</h2>
+      <p class="hint">Base vs Active for the two core books — Equity ($) + locked profit tally. Active variants use shorter signals and softer brakes to sit flat less often.</p>
+      <h3 style="margin:0.75rem 0 0.35rem;font-size:0.95rem;color:var(--muted)">Pass-then-defend</h3>
+      <p class="hint" id="siblingHintPd" style="margin-top:0"></p>
+      <div class="chart-box"><canvas id="siblingChartPd"></canvas></div>
+      <h3 style="margin:1.1rem 0 0.35rem;font-size:0.95rem;color:var(--muted)">RP + Dual-mom blend</h3>
+      <p class="hint" id="siblingHintRp" style="margin-top:0"></p>
+      <div class="chart-box"><canvas id="siblingChartRp"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>$1,250 daily-loss kill days</h2>
+      <p class="hint">Every book that closed through <code>day_start − $1,250</code> on the daily-withdraw path. Safe books stay empty — this panel shows the account-killed ones.</p>
+      <div class="chart-box"><canvas id="killChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Playbook</h2>
+      <div class="champ-grid" id="playbook"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Universe & rules</h2>
+      <ul class="checklist" id="metaList"></ul>
+    </section>
+
+    <footer>
+      Generate: <code>python3 -m src.run_ftmo_lab</code> · Yahoo daily proxies ≠ FTMO fills/swaps/intraday marks.
+    </footer>
+  </main>
+
+  <script>
+    const COLORS = ["#3dd6c6", "#f0a34a", "#7aa2ff", "#c4b5fd", "#7dffb3", "#f07178", "#e8c47c", "#8ecae6"];
+    const charts = [];
+
+    const pct = (x) => x == null || Number.isNaN(x) ? "—" : `${(100 * x).toFixed(1)}%`;
+    const num = (x, d = 2) => x == null || Number.isNaN(x) ? "—" : Number(x).toFixed(d);
+    const usd = (x, d = 0) => x == null || Number.isNaN(+x) ? "—" : Number(x).toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: d, minimumFractionDigits: d });
+
+    async function main() {
+      const res = await fetch(`./data/ftmo_lab.json?v=${Date.now()}`, { cache: "no-store" });
+      const data = await res.json();
+      render(data);
+    }
+
+    function render(data) {
+      const strat = data.strategies || [];
+      const top = strat[0];
+      const ch = data.champions || {};
+      const uni = data.universe || {};
+      const rules = data.rules || {};
+
+      document.getElementById("disclaimer").textContent = data.disclaimer || "";
+      document.getElementById("rubric").textContent =
+        `Rubric: ${data.ranking_rubric?.composite || ""} · Survival=${data.ranking_rubric?.survival || ""}`;
+
+      const rv = data.risk_visuals || {};
+      const lim = rv.limits || { daily_loss: 0.05, max_loss: 0.20, max_loss_floor: 0.80, daily_loss_dollars: 1250, max_loss_dollars: 5000, max_loss_floor_dollars: 20000, initial_balance: 25000 };
+      const env = rv.winner_envelope || {};
+
+      document.getElementById("limitCards").innerHTML = `
+        <div class="limit-card daily">
+          <p class="label">Maximum daily loss</p>
+          <p class="value">${usd(lim.daily_loss_dollars ?? 1250)}</p>
+          <p class="desc">Fixed dollar daily loss from day-start (not a % of current equity). Winner worst day: <strong style="color:var(--ink)">${usd(env.worst_day_dollars ?? env.worst_day * (lim.initial_balance||25000))}</strong> · headroom ${usd(env.daily_headroom_dollars)}.</p>
+        </div>
+        <div class="limit-card max">
+          <p class="label">Maximum loss (static)</p>
+          <p class="value">${usd(lim.max_loss_dollars ?? 5000)}</p>
+          <p class="desc">Hard floor at <strong style="color:var(--ink)">${usd(lim.max_loss_floor_dollars ?? 20000)}</strong> from the $25k start — never trails. Winner min equity: <strong style="color:var(--ink)">${usd(env.min_equity_dollars ?? env.min_equity * 25000)}</strong> · room above floor ${usd(env.max_headroom_dollars)}.</p>
+        </div>
+      `;
+
+      const dh = Math.max(0, Math.min(1, (env.daily_headroom ?? 0) / (lim.daily_loss || 0.05)));
+      const mh = Math.max(0, Math.min(1, (env.max_headroom ?? 0) / (lim.max_loss || 0.10)));
+      const dClass = dh < 0.25 ? "bad" : dh < 0.5 ? "warn" : "";
+      const mClass = mh < 0.25 ? "bad" : mh < 0.5 ? "warn" : "";
+      document.getElementById("headroomMeters").innerHTML = `
+        <div class="meter">
+          <div class="top"><span>Daily-loss headroom (vs −$1,250)</span><strong>${env.cleared_daily_limit ? "CLEAR" : "BREACH"} · worst ${pct(env.worst_day)}</strong></div>
+          <div class="bar ${dClass}"><span style="width:${(dh * 100).toFixed(1)}%"></span><i class="kill" style="left:0"></i></div>
+        </div>
+        <div class="meter">
+          <div class="top"><span>Max-loss headroom (vs 90% floor)</span><strong>${env.cleared_max_floor ? "CLEAR" : "BREACH"} · min eq ${num(env.min_equity, 3)}</strong></div>
+          <div class="bar ${mClass}"><span style="width:${(mh * 100).toFixed(1)}%"></span><i class="kill" style="left:0"></i></div>
+        </div>
+      `;
+
+      document.getElementById("badges").innerHTML = `
+        <div class="badge ok"><strong>Winner</strong> · ${top?.name || "—"}</div>
+        <div class="badge warn"><strong>Daily limit</strong> · ${usd(-(lim.daily_loss_dollars||1250))}</div>
+        <div class="badge" style="border-color:#6b2d35;color:var(--bad)"><strong>Max loss</strong> · ${usd(-(lim.max_loss_dollars||5000))} · floor ${usd(lim.max_loss_floor_dollars||20000)}</div>
+        <div class="badge ok"><strong>Profit locked</strong> · ${usd(env.locked_profit_dollars || 0)}</div>
+        <div class="badge"><strong>2Y full-pass</strong> · ${pct(top?.full_2y?.challenge?.full_pass_rate)}</div>
+        <div class="badge ok"><strong>2Y fail</strong> · ${pct(top?.full_2y?.challenge?.fail_rate)} (daily ${top?.full_2y?.challenge?.fail_daily || 0} / max ${top?.full_2y?.challenge?.fail_max || 0})</div>
+        <div class="badge"><strong>Sharpe</strong> · ${num(top?.full_2y?.metrics?.sharpe)}</div>
+      `;
+
+      // Risk path charts (equity vs floor + daily vs −5%)
+      const drawRisk = (key) => {
+        const path = key === "6M" ? rv.winner_path_6m : rv.winner_path_2y;
+        if (!path) return;
+        [...document.querySelectorAll("#riskTabs button")].forEach((b) => b.classList.toggle("on", b.dataset.k === key));
+        const killEq = charts.filter(c => c.canvas && (c.canvas.id === "equityFloorChart" || c.canvas.id === "dailyLimitChart"));
+        killEq.forEach((c) => { c.destroy(); charts.splice(charts.indexOf(c), 1); });
+
+        charts.push(new Chart(document.getElementById("equityFloorChart"), {
+          type: "line",
+          data: {
+            labels: path.dates,
+            datasets: [
+              {
+                label: `${top?.name || "Winner"} equity ($)`,
+                data: path.equity_dollars || path.equity,
+                borderColor: "#3dd6c6",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.2,
+                fill: false,
+                order: 2,
+              },
+              {
+                label: `Withdrawn profit tally (${usd((path.profit_tally_dollars || []).at(-1) || 0)})`,
+                data: path.profit_tally_dollars || path.profit_tally || [],
+                borderColor: "#f0a34a",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.2,
+                fill: false,
+                order: 1,
+              },
+              {
+                label: "Equity + locked profit",
+                data: path.total_dollars || [],
+                borderColor: "#e8f0ec",
+                borderDash: [4, 3],
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.6,
+                fill: false,
+                order: 1,
+              },
+              {
+                label: "$20k max-loss floor",
+                data: path.max_loss_floor_dollars || path.max_loss_floor,
+                borderColor: "#f07178",
+                borderDash: [6, 4],
+                tension: 0,
+                pointRadius: 0,
+                borderWidth: 2,
+                fill: false,
+                order: 3,
+              },
+              {
+                label: `$1,250 daily KILL (${path.daily_kill_count || 0})`,
+                data: (path.daily_kill || []).map((k, i) => (k ? (path.equity_dollars || path.equity)[i] : null)),
+                borderColor: "#f07178",
+                backgroundColor: "#f07178",
+                showLine: false,
+                pointStyle: "crossRot",
+                pointRadius: (path.daily_kill || []).map((k) => (k ? 7 : 0)),
+                pointBorderWidth: 2,
+                order: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: (() => {
+                  const tally = (path.profit_tally_dollars || []).at(-1) || 0;
+                  const kill = path.daily_kill_count || 0;
+                  return kill
+                    ? `Equity + profit tally ${usd(tally)} · ${key} · ${kill} kill day(s)`
+                    : `Equity + profit tally ${usd(tally)} · ${key}`;
+                })(),
+                color: (path.daily_kill_count || 0) ? "#f07178" : "#8aa397",
+                font: { size: 12 },
+              },
+              legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 11 } } },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 7 }, grid: { color: "#24352f" } },
+              y: {
+                ticks: { color: "#8aa397" },
+                grid: { color: "#24352f" },
+                suggestedMin: path.equity_dollars ? Math.min(19000, ...path.equity_dollars, ...(path.max_loss_floor_dollars||[20000])) : Math.min(0.78, ...path.equity, ...path.max_loss_floor),
+              },
+            },
+          },
+        }));
+
+        charts.push(new Chart(document.getElementById("dailyLimitChart"), {
+          type: "line",
+          data: {
+            labels: path.dates,
+            datasets: [
+              {
+                label: "Daily PnL ($)",
+                data: path.daily_dollars || path.daily,
+                borderColor: "#7aa2ff",
+                tension: 0.05,
+                pointRadius: (path.daily_kill || []).map((k) => (k ? 5 : 0)),
+                pointStyle: "crossRot",
+                pointBorderColor: "#f07178",
+                pointBackgroundColor: "#f07178",
+                pointBorderWidth: 2,
+                borderWidth: 1.4,
+              },
+              {
+                label: "−$1,250 daily loss",
+                data: path.daily_loss_limit_dollars || path.daily_loss_limit,
+                borderColor: "#f0a34a",
+                borderDash: [5, 4],
+                pointRadius: 0,
+                borderWidth: 2,
+              },
+              {
+                label: "+$1,250 ref",
+                data: path.daily_gain_ref_dollars || path.daily_gain_ref,
+                borderColor: "#24352f",
+                borderDash: [2, 4],
+                pointRadius: 0,
+                borderWidth: 1,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: { display: true, text: `Daily PnL vs −$1,250 · ${key}`, color: "#8aa397", font: { size: 12 } },
+              legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 10 } } },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 6 }, grid: { color: "#24352f" } },
+              y: {
+                ticks: { color: "#8aa397", callback: (v) => `${(100 * v).toFixed(0)}%` },
+                grid: { color: "#24352f" },
+                suggestedMin: -0.06,
+                suggestedMax: 0.06,
+              },
+            },
+          },
+        }));
+      };
+      const riskTabs = document.getElementById("riskTabs");
+      riskTabs.innerHTML = ["6M", "2Y"].map((k) => `<button type="button" data-k="${k}">${k}</button>`).join("");
+      riskTabs.onclick = (e) => {
+        const b = e.target.closest("button");
+        if (b) drawRisk(b.dataset.k);
+      };
+      drawRisk("6M");
+
+      // Breach board stacked bars
+      const board = (rv.breach_board || []).slice().sort((a, b) => a.rank - b.rank).slice(0, 12);
+      charts.push(new Chart(document.getElementById("breachChart"), {
+        type: "bar",
+        data: {
+          labels: board.map((b) => b.name.replace(" vol", "").slice(0, 22)),
+          datasets: [
+            { label: "Fails · daily $1,250", data: board.map((b) => b.fail_daily), backgroundColor: "#f0a34a" },
+            { label: "Fails · max $5k", data: board.map((b) => b.fail_max), backgroundColor: "#f07178" },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: { display: true, text: "Challenge fail tallies by hard rule (2Y rolling)", color: "#8aa397", font: { size: 12 } },
+            legend: { labels: { color: "#8aa397", boxWidth: 10 } },
+          },
+          scales: {
+            x: { stacked: true, ticks: { color: "#8aa397", maxRotation: 45, minRotation: 30, font: { size: 10 } }, grid: { display: false } },
+            y: { stacked: true, ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, title: { display: true, text: "Fail counts", color: "#8aa397" } },
+          },
+        },
+      }));
+
+      // Daily hist vs −5%
+      const hist = rv.daily_hist || { centers: [], counts: [], daily_limit: -0.05 };
+      charts.push(new Chart(document.getElementById("dailyHistChart"), {
+        type: "bar",
+        data: {
+          labels: (hist.centers || []).map((c) => `${(100 * c).toFixed(1)}%`),
+          datasets: [{
+            label: "Winner daily returns (2Y)",
+            data: hist.counts || [],
+            backgroundColor: (hist.centers || []).map((c) => c <= (hist.daily_limit || -0.05) ? "#f07178" : c < -0.02 ? "#f0a34a" : "#3dd6c6"),
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: { display: true, text: "Winner daily return distribution — red bin edge ≈ −$1,250 daily kill", color: "#8aa397", font: { size: 12 } },
+            legend: { display: false },
+          },
+          scales: {
+            x: { ticks: { color: "#8aa397", maxTicksLimit: 10, font: { size: 9 } }, grid: { display: false } },
+            y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
+          },
+        },
+      }));
+
+      const card = (title, body) => `<div class="box ${title.startsWith("Overall") ? "primary" : ""}"><h3>${title}</h3>${body}</div>`;
+      document.getElementById("champions").innerHTML = [
+        card("Overall winner", `<p><strong style="color:var(--ink)">${ch.overall?.name || "—"}</strong></p><p>${ch.overall?.why || ""}</p>`),
+        card("Least failures", `<p><strong style="color:var(--ink)">${ch.least_fails?.name || "—"}</strong></p><p>Fail rate ${pct(ch.least_fails?.fail_rate)} · ${ch.least_fails?.fails || 0} fails / ${ch.least_fails?.attempts || 0} scored attempts</p>`),
+        card("Best paycheck (funded)", `<p><strong style="color:var(--ink)">${ch.best_paycheck?.name || "—"}</strong></p><p>Avg locked trader payout ${pct(ch.best_paycheck?.avg_locked_trader)} · funded breach ${pct(ch.best_paycheck?.fund_breach_rate)}</p><p>Unpaid lost if paying out ${pct(ch.best_paycheck?.avg_unpaid_lost)} vs hoarding ${pct(ch.best_paycheck?.hoard_unpaid_lost)}</p><p>${ch.best_paycheck?.note || ""}</p>`),
+        card("Most room to improve", `<p><strong style="color:var(--ink)">${ch.most_room_to_improve?.name || "—"}</strong></p><p>Improvement ${num(ch.most_room_to_improve?.improvement_room, 3)}</p><p>${ch.most_room_to_improve?.note || ""}</p>`),
+        card("Fastest challenge", `<p><strong style="color:var(--ink)">${ch.fastest_challenge?.name || "—"}</strong></p><p>Avg <strong style="color:var(--ok)">${num(ch.fastest_challenge?.avg_days_to_full_pass, 0)}</strong> trading days to clear P1+P2 (med ${num(ch.fastest_challenge?.median_days_to_full_pass, 0)}) · pass ${pct(ch.fastest_challenge?.full_pass_rate)} · fail ${pct(ch.fastest_challenge?.fail_rate)}</p><p>${ch.fastest_challenge?.note || ""}</p>`),
+        card("Zero-fail random start", `<p><strong style="color:var(--ink)">${ch.zero_fail_random_start?.name || "—"}</strong></p><p>${ch.zero_fail_random_start?.n_zero_fail_books ?? "—"} books with <strong style="color:var(--ok)">0</strong> P1/P2 breaches across ${ch.zero_fail_random_start?.mc_n_attempts ?? "—"} random starts · MC pass ${pct(ch.zero_fail_random_start?.mc_full_pass_rate)}</p><p>${ch.zero_fail_random_start?.note || ""}</p>`),
+        card("Pass-defend · Active", `<p><strong style="color:var(--ink)">${ch.active_sibling?.active_name || "—"}</strong></p><p>Active days ${pct(ch.active_sibling?.active_active_day_rate)} vs base ${pct(ch.active_sibling?.base_active_day_rate)} · flat ${pct(ch.active_sibling?.active_flat_day_rate)} vs ${pct(ch.active_sibling?.base_flat_day_rate)}</p><p>Composite ${num(ch.active_sibling?.active_composite, 3)} (#${ch.active_sibling?.active_rank ?? "—"}) vs base ${num(ch.active_sibling?.base_composite, 3)}</p>`),
+        card("RP Dual · Active", `<p><strong style="color:var(--ink)">${ch.rp_dual_sibling?.active_name || "—"}</strong></p><p>Active days ${pct(ch.rp_dual_sibling?.active_active_day_rate)} vs base ${pct(ch.rp_dual_sibling?.base_active_day_rate)} · flat ${pct(ch.rp_dual_sibling?.active_flat_day_rate)} vs ${pct(ch.rp_dual_sibling?.base_flat_day_rate)}</p><p>Composite ${num(ch.rp_dual_sibling?.active_composite, 3)} (#${ch.rp_dual_sibling?.active_rank ?? "—"}) vs base ${num(ch.rp_dual_sibling?.base_composite, 3)}</p>`),
+        card("Most trades / month", `<p><strong style="color:var(--ink)">${ch.most_trades?.name || "—"}</strong></p><p>${num(ch.most_trades?.trades_per_month, 1)} trade-days/mo · active ${pct(ch.most_trades?.active_day_rate)} · ${ch.most_trades?.meets_20tpm ? "≥20 ✓" : "under 20"}</p><p>${ch.most_trades?.note || ""}</p>`),
+        card("Trade-more board", `<p><strong style="color:var(--ink)">${ch.trade_more_board?.n_meeting_20tpm ?? "—"} / ${ch.trade_more_board?.n_strategies ?? "—"}</strong> books ≥20 trade-days/mo</p><p>${ch.trade_more_board?.note || ""}</p>`),
+      ].join("");
+
+      const verBox = document.getElementById("versionMethods");
+      const verHint = document.getElementById("versionHint");
+      const tmb = ch.trade_more_board || {};
+      if (verHint && tmb.note) verHint.textContent = tmb.note;
+      if (verBox) {
+        const methods = tmb.version_methods || uni.version_methods || {};
+        verBox.innerHTML = Object.keys(methods).sort().map((k) => {
+          const m = methods[k] || {};
+          return `<div class="box"><h3>${m.label || ("V" + k)}</h3><p>${m.thesis || ""}</p></div>`;
+        }).join("");
+      }
+
+      // Random-start Monte Carlo stress board
+      const mcMeta = data.random_start_mc || {};
+      const mcHint = document.getElementById("mcHint");
+      if (mcHint && mcMeta.note) mcHint.textContent = mcMeta.note;
+      const mcBadges = document.getElementById("mcBadges");
+      if (mcBadges) {
+        mcBadges.innerHTML = [
+          `<div class="badge ok"><strong>${mcMeta.n_zero_fail_books ?? "—"} / ${mcMeta.n_strategies ?? strat.length}</strong> zero P1/P2 fail</div>`,
+          `<div class="badge">${mcMeta.n_draws || 200} random starts · seed ${mcMeta.seed ?? 42}</div>`,
+          `<div class="badge">Best zero-fail · <strong>${ch.zero_fail_random_start?.name || "—"}</strong></div>`,
+        ].join("");
+      }
+      const mcBody = document.querySelector("#mcTable tbody");
+      if (mcBody) {
+        const mcSorted = [...strat].sort((a, b) => {
+          const am = a.full_2y.random_start_mc || {};
+          const bm = b.full_2y.random_start_mc || {};
+          const az = am.zero_fail_p1_p2 ? 0 : 1;
+          const bz = bm.zero_fail_p1_p2 ? 0 : 1;
+          if (az !== bz) return az - bz;
+          return (am.fail_rate || 0) - (bm.fail_rate || 0) || (b.scores.composite - a.scores.composite);
+        });
+        mcBody.innerHTML = mcSorted.map((s) => {
+          const m = s.full_2y.random_start_mc || {};
+          const z = !!m.zero_fail_p1_p2;
+          return `<tr>
+            <td>${s.rank}</td>
+            <td><strong>${s.name}</strong></td>
+            <td class="num ${z ? "up" : "down"}">${z ? "YES ✓" : "NO"}</td>
+            <td class="num ${m.fail_rate > 0 ? "down" : "up"}">${pct(m.fail_rate)}</td>
+            <td class="num ${m.phase1_fail_rate > 0 ? "down" : "up"}">${pct(m.phase1_fail_rate)}</td>
+            <td class="num ${m.phase2_fail_rate > 0 ? "down" : "up"}">${pct(m.phase2_fail_rate)}</td>
+            <td class="num up">${pct(m.full_pass_rate)}</td>
+            <td class="num">${m.avg_days_to_full_pass == null ? "—" : num(m.avg_days_to_full_pass, 0)}</td>
+            <td class="num">${m.p05_days_to_full_pass == null ? "—" : `${num(m.p05_days_to_full_pass, 0)} / ${num(m.p95_days_to_full_pass, 0)}`}</td>
+            <td class="num">${m.n_attempts ?? "—"}</td>
+          </tr>`;
+        }).join("");
+      }
+
+      document.querySelector("#stratTable tbody").innerHTML = strat.map((s) => {
+        const c = s.full_2y.challenge;
+        const m = s.full_2y.metrics;
+        const act = s.activity || {};
+        const tpm = act.trades_per_month;
+        const tpmOk = act.meets_20tpm;
+        return `<tr>
+          <td>${s.rank}</td>
+          <td><strong>${s.name}</strong><div class="hint" style="margin:0">${s.family} · ${s.markets}</div></td>
+          <td class="num"><strong>${num(s.scores.composite, 3)}</strong></td>
+          <td class="num up">${pct(c.full_pass_rate)}</td>
+          <td class="num ${c.fail_rate > 0.15 ? "down" : "up"}">${pct(c.fail_rate)}</td>
+          <td class="num ${(s.full_2y.random_start_mc?.fail_rate || 0) > 0 ? "down" : "up"}">${pct(s.full_2y.random_start_mc?.fail_rate)}${s.full_2y.random_start_mc?.zero_fail_p1_p2 ? " ✓" : ""}</td>
+          <td class="num">${c.fails}/${c.n_attempts}</td>
+          <td class="num">${c.fail_daily} / ${c.fail_max}</td>
+          <td class="num">${c.timeouts}</td>
+          <td class="num ${(c.avg_days_to_full_pass || 999) <= 90 ? "up" : ""}">${c.avg_days_to_full_pass == null ? "—" : num(c.avg_days_to_full_pass, 0)}</td>
+          <td class="num">${num(s.scores.pace_score, 2)}</td>
+          <td class="num">${num(m.sharpe)}</td>
+          <td class="num">${pct(m.cagr)}</td>
+          <td class="num ${Math.abs(m.max_dd) > 0.1 ? "down" : ""}">${pct(m.max_dd)}</td>
+          <td class="num up">${pct(s.full_2y.funded_payout?.avg_locked_trader)}</td>
+          <td class="num ${tpmOk ? "up" : ""}">${tpm == null ? "—" : num(tpm, 1)}${tpmOk ? " ✓" : ""}</td>
+          <td class="num ${(s.full_2y.funded_payout?.breach_rate || 0) > 0.1 ? "down" : "up"}">${pct(s.full_2y.funded_payout?.breach_rate)}</td>
+          <td class="num">${pct(s.full_2y.funded_payout?.avg_unpaid_lost)}</td>
+          <td class="num">${pct(s.full_2y.funded_hoard?.avg_unpaid_lost)}</td>
+        </tr>`;
+      }).join("");
+
+      const winRows = [];
+      for (const s of strat.slice(0, 10)) {
+        for (const w of ["6M", "3M", "1M"]) {
+          const win = s.windows[w];
+          const shot = win.single_shot;
+          const pb = win.path_breaches || {};
+          winRows.push(`<tr>
+            <td>${s.name}</td>
+            <td>${w}</td>
+            <td class="num ${win.metrics.total_return >= 0 ? "up" : "down"}">${pct(win.metrics.total_return)}</td>
+            <td class="num">${num(win.metrics.sharpe)}</td>
+            <td class="num">${pct(win.metrics.max_dd)}</td>
+            <td>${shot ? shot.status : "—"}</td>
+            <td class="num">${pb.daily_loss_events ?? "—"}</td>
+            <td class="${pb.max_loss_breach ? "down" : "up"}">${pb.max_loss_breach ? "YES" : "no"}</td>
+          </tr>`);
+        }
+      }
+      document.querySelector("#windowTable tbody").innerHTML = winRows.join("");
+
+      const pb = data.playbook || {};
+      document.getElementById("playbook").innerHTML = `
+        <div class="box primary">
+          <h3>Recommended for FTMO 2-Step</h3>
+          <p><strong style="color:var(--ink)">${(strat.find(s => s.id === pb.recommended) || top || {}).name || pb.recommended}</strong></p>
+          <p>${(strat.find(s => s.id === pb.recommended) || top || {}).thesis || ""}</p>
+        </div>
+        <div class="box">
+          <h3>Pay-yourself-out ops</h3>
+          <ul class="checklist">${(pb.payout_ops || []).map(x => `<li>${x}</li>`).join("")}</ul>
+          <p style="margin-top:0.5rem">Policy: every ${data.payout_policy?.every_n_trading_days ?? 10}d when ≥${pct(data.payout_policy?.min_open_profit)} open · keep ${pct(data.payout_policy?.keep_buffer)} buffer · ${pct(data.payout_policy?.trader_split)} trader split</p>
+        </div>
+        <div class="box">
+          <h3>Challenge ops</h3>
+          <ul class="checklist">${(pb.challenge_ops || []).map(x => `<li>${x}</li>`).join("")}</ul>
+        </div>
+        <div class="box">
+          <h3>Improvement levers</h3>
+          <ul class="checklist">${(pb.improvement_levers || []).map(x => `<li>${x}</li>`).join("")}</ul>
+        </div>
+        <div class="box">
+          <h3>Rules modeled</h3>
+          <p>$25k account · DLL ${usd(rules.daily_loss_dollars||1250)} · Max ${usd(rules.max_loss_dollars||5000)} (floor ${usd(rules.max_loss_floor_dollars||20000)}) · closed excess ≥$25k only · P1 ${pct(rules.phase1_target)} / P2 ${pct(rules.phase2_target)}</p>
+          <p>Sim caps: P1 ≤ ${rules.sim_max_days_phase1}d · P2 ≤ ${rules.sim_max_days_phase2}d · attempt every ${rules.attempt_step_days}d</p>
+          <p>${data.payout_policy?.assumption || ""}</p>
+        </div>
+      `;
+
+      document.getElementById("metaList").innerHTML = [
+        `<strong style="color:var(--ink)">Hard limits:</strong> daily loss ${usd(-(lim.daily_loss_dollars||1250))} from day-start · max loss ${usd(-(lim.max_loss_dollars||5000))} from $25k (floor ${usd(lim.max_loss_floor_dollars||20000)}) · closed excess ≥$25k only.`,
+        `Winner clearance: worst day ${usd(env.worst_day_dollars)} vs −$1,250 · min equity ${usd(env.min_equity_dollars)} vs floor $20,000.`,
+        `Universe: ${(uni.tickers || []).length} Yahoo proxies — FX ${(uni.groups?.fx || []).length}, indices ${(uni.groups?.indices || []).length}, commod ${(uni.groups?.commod || []).length}, crypto ${(uni.groups?.crypto || []).length}, stock CFDs ${(uni.groups?.stock_cfd || []).length}.`,
+        ...(rules.notes || []),
+        "Fail tallies = daily-loss + max-loss breaches only. Timeouts are separate (too slow to hit target inside sim cap).",
+        "Mean-reversion / naked crypto underperformed fail-first ranking — trend + risk-parity dominated.",
+      ].map((t) => `<li>${t}</li>`).join("");
+
+      // Focus chart
+      const focus = data.winner_focus_curves || {};
+      const tabs = document.getElementById("focusTabs");
+      let focusKey = "6M";
+      const drawFocus = (key) => {
+        focusKey = key;
+        [...tabs.querySelectorAll("button")].forEach((b) => b.classList.toggle("on", b.dataset.k === key));
+        const series = focus[key] || [];
+        const killN = series.filter((p) => p.daily_kill).length;
+        const existing = charts.find(c => c.canvas.id === "focusChart");
+        if (existing) { existing.destroy(); charts.splice(charts.indexOf(existing), 1); }
+        charts.push(new Chart(document.getElementById("focusChart"), {
+          type: "line",
+          data: {
+            labels: series.map((p) => p.date),
+            datasets: [
+              {
+                label: `${top?.name || "Winner"} equity ($)`,
+                data: series.map((p) => p.equity_dollars ?? p.equity),
+                borderColor: "#3dd6c6",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2,
+                order: 2,
+              },
+              {
+                label: `Withdrawn profit tally (${usd(series.at(-1)?.profit_tally_dollars || 0)})`,
+                data: series.map((p) => p.profit_tally_dollars ?? null),
+                borderColor: "#f0a34a",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.2,
+                order: 1,
+              },
+              {
+                label: "Equity + locked profit",
+                data: series.map((p) => p.total_dollars ?? null),
+                borderColor: "#e8f0ec",
+                borderDash: [4, 3],
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.5,
+                order: 1,
+              },
+              {
+                label: "$20k max-loss floor",
+                data: series.map(() => lim.max_loss_floor_dollars ?? 20000),
+                borderColor: "#f07178",
+                borderDash: [6, 4],
+                tension: 0,
+                pointRadius: 0,
+                borderWidth: 1.8,
+                order: 3,
+              },
+              {
+                label: `$1,250 / $5k KILL (${killN})`,
+                data: series.map((p) => (p.daily_kill ? (p.equity_dollars ?? p.equity) : null)),
+                borderColor: "#f07178",
+                backgroundColor: "#f07178",
+                showLine: false,
+                pointStyle: "crossRot",
+                pointRadius: series.map((p) => (p.daily_kill ? 7 : 0)),
+                pointBorderWidth: 2,
+                order: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: (() => {
+                  const tally = series.at(-1)?.profit_tally_dollars || 0;
+                  return killN
+                    ? `Profit locked ${usd(tally)} · ${killN} kill day(s)`
+                    : `Profit locked ${usd(tally)} · no kill days in window`;
+                })(),
+                color: killN ? "#f07178" : "#8aa397",
+                font: { size: 12 },
+              },
+              legend: { labels: { color: "#8aa397" } },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
+            },
+          },
+        }));
+      };
+      tabs.innerHTML = ["1M", "3M", "6M", "2Y"].map((k) =>
+        `<button type="button" data-k="${k}">${k}</button>`
+      ).join("");
+      tabs.onclick = (e) => {
+        const b = e.target.closest("button");
+        if (b) drawFocus(b.dataset.k);
+      };
+      drawFocus("6M");
+
+      // Challenge journey: P1 (+10%) → reset → P2 (+5%) → reset → funded
+      const journeyPack = data.challenge_journeys || {};
+      const journeyById = journeyPack.by_id || {};
+      const journeyIds = (journeyPack.ids || []).filter((id) => journeyById[id]);
+      const journeyTabs = document.getElementById("journeyTabs");
+      const journeyBadges = document.getElementById("journeyBadges");
+      const journeyHint = document.getElementById("journeyHint");
+      if (journeyHint && journeyPack.note) journeyHint.textContent = journeyPack.note;
+
+      const statusLabel = (st) => ({
+        full_funded: "Cleared P1+P2 · funded profits tracked",
+        fail_phase1: "Failed Phase 1",
+        fail_phase2: "Failed Phase 2",
+        fail_funded: "Cleared challenge · died funded",
+        timeout_phase1: "Timed out Phase 1",
+        timeout_phase2: "Timed out Phase 2",
+        censored: "Truncated (not enough market data)",
+      }[st] || st || "—");
+
+      const drawJourney = (sid) => {
+        const j = journeyById[sid];
+        if (!j || !journeyTabs) return;
+        [...journeyTabs.querySelectorAll("button")].forEach((b) => b.classList.toggle("on", b.dataset.k === sid));
+        if (journeyBadges) {
+          const ok = j.status === "full_funded";
+          const warn = String(j.status || "").startsWith("fail") || String(j.status || "").startsWith("timeout");
+          journeyBadges.innerHTML = [
+            `<div class="badge ${ok ? "ok" : warn ? "warn" : ""}"><strong>${j.name || sid}</strong> · ${statusLabel(j.status)}</div>`,
+            `<div class="badge">Start <strong>${j.start || "—"}</strong></div>`,
+            `<div class="badge">P1 <strong>${j.phase1_days ?? 0}d</strong> → +10%</div>`,
+            `<div class="badge">P2 <strong>${j.phase2_days ?? 0}d</strong> → +5%</div>`,
+            `<div class="badge">Funded <strong>${j.funded_days ?? 0}d</strong></div>`,
+            `<div class="badge ok"><strong>Profit locked</strong> · ${usd(j.locked_profit_dollars || 0)} · trader ${usd(j.locked_trader_dollars || 0)}</div>`,
+          ].join("");
+        }
+
+        const pts = j.points || [];
+        const existing = charts.find((c) => c.canvas && c.canvas.id === "journeyChart");
+        if (existing) { existing.destroy(); charts.splice(charts.indexOf(existing), 1); }
+        const canvas = document.getElementById("journeyChart");
+        if (!canvas || !pts.length) return;
+
+        const p1End = j.phase1_days || 0;
+        const p2End = p1End + (j.phase2_days || 0);
+        const targetSeries = pts.map((p) => {
+          if (p.phase === "phase1") return j.phase1_target_dollars ?? 27500;
+          if (p.phase === "phase2") return j.phase2_target_dollars ?? 26250;
+          return null;
+        });
+        const killN = pts.filter((p) => p.kill).length;
+        const phaseBandPlugin = {
+          id: "journeyPhaseBands",
+          beforeDraw(chart) {
+            const { ctx, chartArea, scales } = chart;
+            if (!chartArea || !scales.x) return;
+            const x = scales.x;
+            const bands = [
+              { from: 0, to: p1End, color: "rgba(61,214,198,0.06)" },
+              { from: p1End, to: p2End, color: "rgba(122,162,255,0.07)" },
+              { from: p2End, to: pts.length, color: "rgba(240,163,74,0.06)" },
+            ];
+            bands.forEach((b) => {
+              if (b.to <= b.from) return;
+              const x0 = x.getPixelForValue(Math.max(0, b.from - 0.5));
+              const x1 = x.getPixelForValue(Math.min(pts.length - 1, b.to - 0.5));
+              ctx.save();
+              ctx.fillStyle = b.color;
+              ctx.fillRect(x0, chartArea.top, Math.max(0, x1 - x0), chartArea.bottom - chartArea.top);
+              ctx.restore();
+            });
+          },
+        };
+
+        charts.push(new Chart(canvas, {
+          type: "line",
+          data: {
+            labels: pts.map((p) => `D${p.day} · ${p.date}`),
+            datasets: [
+              {
+                label: "Account equity ($)",
+                data: pts.map((p) => p.equity_dollars),
+                borderColor: "#3dd6c6",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.2,
+                order: 2,
+                segment: {
+                  borderColor: (ctx) => {
+                    const p = pts[ctx.p1DataIndex];
+                    if (!p) return "#3dd6c6";
+                    if (p.phase === "phase1") return "#3dd6c6";
+                    if (p.phase === "phase2") return "#7aa2ff";
+                    return "#f0a34a";
+                  },
+                },
+              },
+              {
+                label: "Phase target ($27.5k / $26.25k)",
+                data: targetSeries,
+                borderColor: "#c4b5fd",
+                borderDash: [5, 4],
+                tension: 0,
+                pointRadius: 0,
+                borderWidth: 1.5,
+                spanGaps: false,
+                order: 3,
+              },
+              {
+                label: `Funded profit locked (${usd(j.locked_profit_dollars || 0)})`,
+                data: pts.map((p) => (p.phase === "funded" ? p.profit_tally_dollars : null)),
+                borderColor: "#f0a34a",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.2,
+                spanGaps: false,
+                order: 1,
+              },
+              {
+                label: "$20k floor",
+                data: pts.map(() => lim.max_loss_floor_dollars ?? 20000),
+                borderColor: "#f07178",
+                borderDash: [6, 4],
+                tension: 0,
+                pointRadius: 0,
+                borderWidth: 1.5,
+                order: 4,
+              },
+              {
+                label: "Phase pass / reset",
+                data: pts.map((p) => (p.event === "phase_pass" ? p.equity_dollars : null)),
+                borderColor: "#7dffb3",
+                backgroundColor: "#7dffb3",
+                showLine: false,
+                pointStyle: "circle",
+                pointRadius: pts.map((p) => (p.event === "phase_pass" ? 6 : 0)),
+                order: 0,
+              },
+              {
+                label: killN ? `Kill × (${killN})` : "Kill ×",
+                data: pts.map((p) => (p.kill ? p.equity_dollars : null)),
+                borderColor: "#f07178",
+                backgroundColor: "#f07178",
+                showLine: false,
+                pointStyle: "crossRot",
+                pointRadius: pts.map((p) => (p.kill ? 8 : 0)),
+                pointBorderWidth: 2,
+                order: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: `P1 ${j.phase1_days || 0}d · P2 ${j.phase2_days || 0}d · Funded ${j.funded_days || 0}d · locked ${usd(j.locked_profit_dollars || 0)}`,
+                color: killN ? "#f07178" : "#8aa397",
+                font: { size: 12 },
+              },
+              legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 10 } } },
+              tooltip: {
+                callbacks: {
+                  afterLabel(ctx) {
+                    const p = pts[ctx.dataIndex];
+                    if (!p) return "";
+                    const bits = [`phase: ${p.phase}`];
+                    if (p.event) bits.push(`event: ${p.event}`);
+                    return bits.join(" · ");
+                  },
+                },
+              },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 10 }, grid: { color: "#24352f" } },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
+            },
+          },
+          plugins: [phaseBandPlugin],
+        }));
+      };
+
+      if (journeyTabs && journeyIds.length) {
+        journeyTabs.innerHTML = journeyIds.map((id) => {
+          const j = journeyById[id];
+          const label = (j && j.name) || id;
+          return `<button type="button" data-k="${id}">${label}</button>`;
+        }).join("");
+        journeyTabs.onclick = (e) => {
+          const b = e.target.closest("button");
+          if (b) drawJourney(b.dataset.k);
+        };
+        drawJourney(journeyPack.default_id && journeyById[journeyPack.default_id]
+          ? journeyPack.default_id
+          : journeyIds[0]);
+      }
+
+      // Overlay top 5 on 6M — red × marks any $1,250 daily-loss kill day
+      const top5 = strat.slice(0, 5);
+      const curve6 = data.curves_6m || {};
+      const curve2y = data.curves || {};
+      const base = curve6[top5[0]?.id] || [];
+      const killOverlay = (curve, label, color) => {
+        const killN = (curve || []).filter((p) => p.daily_kill).length;
+        if (!killN) return null;
+        return {
+          label: `${label} · $1,250 KILL (${killN})`,
+          data: (curve || []).map((p) => (p.daily_kill ? p.equity : null)),
+          borderColor: color,
+          backgroundColor: "#f07178",
+          showLine: false,
+          pointStyle: "crossRot",
+          pointRadius: (curve || []).map((p) => (p.daily_kill ? 7 : 0)),
+          pointBorderWidth: 2,
+          pointBorderColor: "#f07178",
+          order: 0,
+        };
+      };
+      const overlaySets = top5.map((s, i) => ({
+        label: s.name,
+        data: (curve6[s.id] || []).map((p) => p.equity),
+        borderColor: COLORS[i % COLORS.length],
+        tension: 0.05,
+        pointRadius: 0,
+        borderWidth: i === 0 ? 2.4 : 1.5,
+        order: 2,
+      }));
+      top5.forEach((s, i) => {
+        const mark = killOverlay(curve6[s.id] || curve2y[s.id], s.name, COLORS[i % COLORS.length]);
+        if (mark) overlaySets.push(mark);
+      });
+      if (base.length) {
+        overlaySets.push({
+          label: "$20k max-loss floor",
+          data: base.map(() => lim.max_loss_floor ?? 0.9),
+          borderColor: "#f07178",
+          borderDash: [6, 4],
+          tension: 0,
+          pointRadius: 0,
+          borderWidth: 1.8,
+          order: 3,
+        });
+      }
+      const topKillN = top5.reduce(
+        (n, s) => n + (curve6[s.id] || curve2y[s.id] || []).filter((p) => p.daily_kill).length,
+        0,
+      );
+      charts.push(new Chart(document.getElementById("overlayChart"), {
+        type: "line",
+        data: {
+          labels: base.map((p) => p.date),
+          datasets: overlaySets,
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: topKillN
+                ? `Top books vs $20k floor · 6M · ${topKillN} daily-loss kill day(s) marked`
+                : "Top books vs $20k floor · 6M · no $1,250 daily kills in top books",
+              color: topKillN ? "#f07178" : "#8aa397",
+              font: { size: 12 },
+            },
+            legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 11 } } },
+          },
+          scales: {
+            x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
+            y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, suggestedMin: 0.78 },
+          },
+        },
+      }));
+
+      // Sibling overlays: Pass-defend + RP Dual (base vs active)
+      const drawSibling = (meta, pack, hintId, canvasId, fallbackBaseId, fallbackActiveId) => {
+        const hint = document.getElementById(hintId);
+        if (hint && meta) {
+          hint.innerHTML = `${meta.note || ""} Active days <strong style="color:var(--ok)">${pct(meta.active_active_day_rate)}</strong> vs base <strong>${pct(meta.base_active_day_rate)}</strong> · flat <strong style="color:var(--ok)">${pct(meta.active_flat_day_rate)}</strong> vs <strong>${pct(meta.base_flat_day_rate)}</strong>.`;
+        }
+        const baseSib = (pack && pack.base_6m) || curve6[fallbackBaseId] || [];
+        const actSib = (pack && pack.active_6m) || curve6[fallbackActiveId] || [];
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !(baseSib.length || actSib.length)) return;
+        const axis = actSib.length >= baseSib.length ? actSib : baseSib;
+        charts.push(new Chart(canvas, {
+          type: "line",
+          data: {
+            labels: axis.map((p) => p.date),
+            datasets: [
+              {
+                label: `${meta?.base_name || "Base"} equity ($)`,
+                data: baseSib.map((p) => p.equity_dollars ?? p.equity),
+                borderColor: "#7aa2ff",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.8,
+                order: 2,
+              },
+              {
+                label: `${meta?.active_name || "Active"} equity ($)`,
+                data: actSib.map((p) => p.equity_dollars ?? p.equity),
+                borderColor: "#3dd6c6",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.4,
+                order: 2,
+              },
+              {
+                label: `${meta?.base_name || "Base"} profit locked`,
+                data: baseSib.map((p) => p.profit_tally_dollars ?? null),
+                borderColor: "#c4b5fd",
+                borderDash: [4, 3],
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.4,
+                order: 1,
+              },
+              {
+                label: `${meta?.active_name || "Active"} profit locked`,
+                data: actSib.map((p) => p.profit_tally_dollars ?? null),
+                borderColor: "#f0a34a",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2.0,
+                order: 1,
+              },
+              {
+                label: "$20k floor",
+                data: axis.map(() => lim.max_loss_floor_dollars ?? 20000),
+                borderColor: "#f07178",
+                borderDash: [6, 4],
+                pointRadius: 0,
+                borderWidth: 1.6,
+                tension: 0,
+                order: 3,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: `6M · Active ${pct(meta?.active_active_day_rate)} days in market vs base ${pct(meta?.base_active_day_rate)}`,
+                color: "#8aa397",
+                font: { size: 12 },
+              },
+              legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 10 } } },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" } },
+            },
+          },
+        }));
+      };
+
+      const sibCurves = data.sibling_focus_curves || {};
+      drawSibling(
+        ch.active_sibling || {},
+        sibCurves.pass_defend || { base_6m: sibCurves.base_6m, active_6m: sibCurves.active_6m },
+        "siblingHintPd",
+        "siblingChartPd",
+        "pass_defend",
+        "pass_defend_active",
+      );
+      drawSibling(
+        ch.rp_dual_sibling || {},
+        sibCurves.rp_dual || {},
+        "siblingHintRp",
+        "siblingChartRp",
+        "rp_dual_blend",
+        "rp_dual_blend_active",
+      );
+
+      // Killer books — paths that breached −$1,250 daily
+      const killBooks = Object.keys(curve2y)
+        .map((id) => {
+          const c = curve2y[id] || [];
+          const killDates = c.filter((p) => p.daily_kill);
+          return { id, name: (strat.find((s) => s.id === id) || {}).name || id, curve: c, killN: killDates.length };
+        })
+        .filter((x) => x.killN > 0)
+        .sort((a, b) => b.killN - a.killN);
+      const killCanvas = document.getElementById("killChart");
+      if (killCanvas && killBooks.length) {
+        const axis = killBooks[0].curve;
+        const killSets = killBooks.slice(0, 5).map((b, i) => ({
+          label: `${b.name} (${b.killN} kills)`,
+          data: b.curve.map((p) => p.equity),
+          borderColor: COLORS[(i + 3) % COLORS.length],
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: 1.6,
+          order: 2,
+        }));
+        killBooks.slice(0, 5).forEach((b, i) => {
+          killSets.push({
+            label: `${b.name} · × kill days`,
+            data: b.curve.map((p) => (p.daily_kill ? p.equity : null)),
+            borderColor: "#f07178",
+            backgroundColor: "#f07178",
+            showLine: false,
+            pointStyle: "crossRot",
+            pointRadius: b.curve.map((p) => (p.daily_kill ? 8 : 0)),
+            pointBorderWidth: 2,
+            order: 0,
+          });
+        });
+        killSets.push({
+          label: "$20k max-loss floor",
+          data: axis.map(() => lim.max_loss_floor ?? 0.9),
+          borderColor: "#f07178",
+          borderDash: [6, 4],
+          tension: 0,
+          pointRadius: 0,
+          borderWidth: 1.8,
+          order: 3,
+        });
+        const totalKills = killBooks.reduce((n, b) => n + b.killN, 0);
+        charts.push(new Chart(killCanvas, {
+          type: "line",
+          data: { labels: axis.map((p) => p.date), datasets: killSets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: {
+                display: true,
+                text: `Kill-day museum · ${killBooks.length} book(s) · ${totalKills} day(s) that would have killed on −$1,250 daily`,
+                color: "#f07178",
+                font: { size: 12 },
+              },
+              legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 10 } } },
+            },
+            scales: {
+              x: { ticks: { color: "#8aa397", maxTicksLimit: 8 }, grid: { color: "#24352f" } },
+              y: { ticks: { color: "#8aa397" }, grid: { color: "#24352f" }, suggestedMin: 0.75 },
+            },
+          },
+        }));
+      } else if (killCanvas) {
+        killCanvas.parentElement.insertAdjacentHTML(
+          "beforeend",
+          `<p class="hint" style="padding:0.75rem 1rem">No strategy in this bake-off closed a day through the −$1,250 daily-loss limit.</p>`,
+        );
+      }
+    }
+
+    main().catch((e) => {
+      document.body.insertAdjacentHTML("beforeend", `<p style="color:#f07178;padding:1rem">Failed to load ftmo_lab.json: ${e}</p>`);
+    });
+  </script>
+</body>
+</html>

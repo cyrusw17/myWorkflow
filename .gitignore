@@ -1,43 +1,24 @@
-# Secrets
+# Python / research artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
 .env
 .env.*
 !.env.example
-
-# OS
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+data/raw/
+data/processed/
+# Keep data/cache CSVs for offline/CI bake-offs
+outputs/
+*.parquet
+*.h5
 .DS_Store
-Thumbs.db
 
-# PHP / Laravel
-vendor/
-node_modules/
-.phpunit.cache
-.phpunit.result.cache
-Homestead.json
-Homestead.yaml
-auth.json
-
-# Laravel build & runtime
-website/app/public/build/
-website/app/public/hot/
-website/app/public/storage
-website/app/storage/*.key
-website/app/storage/framework/cache/data/*
-website/app/storage/framework/sessions/*
-website/app/storage/framework/views/*
-website/app/storage/logs/*
-website/app/bootstrap/cache/*.php
-!website/app/bootstrap/cache/.gitignore
-
-# MVP runtime data
-mvp-website/storage/*.sqlite
-mvp-website/storage/*.log
-
-# IDE
-.idea/
-.vscode/
-.fleet/
-
-# Logs
-npm-debug.log
-yarn-error.log
-*.log
+# Broker secrets — never commit
+robinhood*.json
+*_token*
+credentials*

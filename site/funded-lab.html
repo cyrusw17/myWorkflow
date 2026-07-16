@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Funded prop lab — AI agents & payout survival</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg0: #0c1210; --bg1: #14201c; --ink: #e8f0ec; --muted: #8aa397;
+      --line: #24352f; --a: #3dd6c6; --b: #f0a34a; --ok: #7dffb3; --bad: #f07178;
+      --spy: #7aa2ff; --v2: #c4b5fd;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(1100px 560px at 12% -10%, #1a3a32 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #241e18 0%, transparent 52%),
+        var(--bg0);
+      color: var(--ink); min-height: 100vh;
+    }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem 0.9rem 3.5rem; }
+    @media (min-width: 720px) { main { padding: 2rem 1.25rem 4rem; } }
+    nav.top { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    nav.top a {
+      color: var(--a); text-decoration: none; border: 1px solid var(--line);
+      background: var(--bg1); padding: 0.35rem 0.65rem; font-size: 0.82rem;
+    }
+    nav.top a.here { color: var(--ink); border-color: #2d6b4f; }
+    h1 { font-size: clamp(1.4rem, 5vw, 2.2rem); letter-spacing: -0.03em; margin: 0 0 0.35rem; }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; max-width: 48rem; line-height: 1.45; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    .badge {
+      border: 1px solid var(--line); background: var(--bg1);
+      padding: 0.35rem 0.6rem; font-size: 0.78rem; color: var(--muted);
+    }
+    .badge strong { color: var(--ink); }
+    .badge.ok { border-color: #2d6b4f; color: var(--ok); }
+    .badge.warn { border-color: #6b4a2d; color: var(--b); }
+    .panel {
+      border: 1px solid var(--line); background: rgba(20,32,28,0.85);
+      padding: 0.85rem 0.75rem 0.75rem; margin-bottom: 1rem;
+    }
+    .panel h2 {
+      margin: 0 0 0.75rem; font-size: 0.92rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .hint { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+    .firm-grid { display: grid; grid-template-columns: 1fr; gap: 0.85rem; }
+    @media (min-width: 900px) { .firm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .firm-card {
+      border: 1px solid var(--line); background: rgba(12,18,16,0.55);
+      padding: 0.85rem 0.8rem 0.75rem; min-width: 0;
+    }
+    .firm-card.primary { border-color: #2d6b4f; }
+    .firm-card h3 { margin: 0 0 0.25rem; font-size: 1.02rem; }
+    .meta { color: var(--muted); font-size: 0.75rem; line-height: 1.4; margin-bottom: 0.55rem; }
+    .scorebar {
+      display: grid; grid-template-columns: 72px 1fr 28px; gap: 0.35rem 0.45rem;
+      align-items: center; font-size: 0.72rem; color: var(--muted); margin: 0.55rem 0 0.65rem;
+    }
+    .scorebar i {
+      display: block; height: 0.35rem; background: #24352f; border-radius: 2px; overflow: hidden;
+    }
+    .scorebar i span { display: block; height: 100%; background: var(--a); }
+    .pill {
+      display: inline-block; border: 1px solid var(--line); padding: 0.15rem 0.4rem;
+      font-size: 0.7rem; color: var(--muted); margin: 0 0.25rem 0.25rem 0;
+    }
+    .pill.ok { color: var(--ok); border-color: #2d6b4f; }
+    .pill.warn { color: var(--b); border-color: #6b4a2d; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th, td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    td.num { font-variant-numeric: tabular-nums; }
+    .up { color: var(--ok); } .down { color: var(--bad); }
+    .chart-box { position: relative; width: 100%; height: 360px; }
+    .chart-box canvas { width: 100% !important; height: 100% !important; display: block; }
+    .checklist { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+    .checklist li { margin-bottom: 0.35rem; }
+    .playbook {
+      display: grid; grid-template-columns: 1fr; gap: 0.75rem;
+    }
+    @media (min-width: 800px) { .playbook { grid-template-columns: 1.1fr 0.9fr; } }
+    .box {
+      border: 1px solid var(--line); background: rgba(12,18,16,0.45); padding: 0.75rem;
+    }
+    .box h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+    .box p, .box li { color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+    footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
+    a { color: var(--a); }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="top">
+      <a href="./index.html">Bake-off</a>
+      <a href="./confluence-lab.html">Confluence boost</a>
+      <a href="./dd-lab.html">V2 drawdown lab</a>
+      <a class="here" href="./funded-lab.html">Funded prop lab</a>
+      <a href="./ftmo-lab.html">FTMO Challenge lab</a>
+      <a href="./topstep-lab.html">Topstep 150K</a>
+      <a href="./rp-dual-lab.html">RP + Dual family</a>
+    </nav>
+
+    <h1>Funded prop lab</h1>
+    <p class="sub">
+      Shortlist of prop firms that survive three filters for our AI-agent stack:
+      (1) not-obvious-scam / credible payout history,
+      (2) real automation path (EA / Open API / native REST),
+      (3) drawdown + consistency rules that don’t quietly deny payouts.
+    </p>
+
+    <div class="row" id="badges"></div>
+    <p class="hint" id="disclaimer"></p>
+
+    <section class="panel">
+      <h2>Quant shortlist — ranked for our agent</h2>
+      <p class="hint">
+        Rubric = Trust 25 + API/AI 25 + DD model 25 + Payout-safety 25.
+        Primary pick favors <strong>static drawdown</strong> and <strong>no consistency trap</strong>.
+      </p>
+      <div class="firm-grid" id="firmGrid"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Comparison board</h2>
+      <div style="overflow-x:auto">
+        <table id="firmTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Firm</th>
+              <th>Score</th>
+              <th>DD type</th>
+              <th>Max DD</th>
+              <th>Consistency</th>
+              <th>Automation</th>
+              <th>Payout</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Avoid for unsupervised AI agents</h2>
+      <ul class="checklist" id="avoidList"></ul>
+    </section>
+
+    <section class="panel">
+      <h2>Strategy for funded accounts</h2>
+      <div class="playbook" id="playbook"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Research books under a 10% static floor</h2>
+      <p class="hint">
+        Same equity residual-mom research path, scored against a <strong>prop-like 10% MaxDD gate</strong>
+        (FTMO-shaped). The prop-compliant template adds daily halt + soft/hard path buffers.
+      </p>
+      <div class="chart-box"><canvas id="stratChart"></canvas></div>
+      <div style="overflow-x:auto; margin-top:0.85rem">
+        <table id="stratTable">
+          <thead>
+            <tr>
+              <th>Book</th>
+              <th>Prop 10% gate</th>
+              <th>Retail 35% gate</th>
+              <th>Max DD</th>
+              <th>Sharpe</th>
+              <th>CAGR</th>
+              <th>Best-day share</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Payout survival checklist</h2>
+      <ul class="checklist" id="checklist"></ul>
+    </section>
+
+    <section class="panel">
+      <h2>Assumptions</h2>
+      <ul class="checklist" id="warnings"></ul>
+    </section>
+
+    <footer>
+      Generated by <code>python -m src.run_funded_lab</code> ·
+      Rules change — verify on the firm’s site before buying a challenge.
+    </footer>
+  </main>
+
+  <script>
+    const pct = (x) => (x == null || Number.isNaN(Number(x)) ? "—" : (Number(x) * 100).toFixed(2) + "%");
+    const num = (x) => (x == null || Number.isNaN(Number(x)) ? "—" : Number(x).toFixed(2));
+    const charts = [];
+    const COLORS = {
+      spy: "#7aa2ff",
+      v1: "#7dffb3",
+      v2: "#c4b5fd",
+      v2_corr_vol: "#f0a34a",
+      prop_ftmo_template: "#3dd6c6",
+    };
+
+    function bar(score, max = 25) {
+      const w = Math.max(0, Math.min(100, (100 * score) / max));
+      return `<i><span style="width:${w}%"></span></i>`;
+    }
+
+    async function load() {
+      const res = await fetch(`./data/funded_lab.json?v=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Missing funded_lab.json — run python -m src.run_funded_lab");
+      return res.json();
+    }
+
+    function render(data) {
+      const firms = data.firms || [];
+      const top = firms[0];
+      document.getElementById("disclaimer").textContent = data.disclaimer || "";
+      document.getElementById("badges").innerHTML = `
+        <div class="badge ok"><strong>Loaded</strong> · ${new Date(data.generated_at).toUTCString()}</div>
+        <div class="badge ok"><strong>Primary pick</strong> · ${top ? top.name : "—"}</div>
+        <div class="badge"><strong>Firms scored</strong> · ${firms.length}</div>
+        <div class="badge warn"><strong>Verify rules</strong> · before any challenge fee</div>
+      `;
+
+      document.getElementById("firmGrid").innerHTML = firms.map((f) => {
+        const s = f.scores || {};
+        const primary = f.tier === "primary" || f.tier === "primary_ai_native";
+        return `
+          <article class="firm-card ${primary ? "primary" : ""}">
+            <h3>#${f.rank} ${f.name} <span class="pill ${primary ? "ok" : ""}">${f.tier}</span></h3>
+            <div class="meta">${f.asset_class} · total <strong style="color:var(--ink)">${f.total_score}/100</strong></div>
+            <div class="meta">${f.backing_note}</div>
+            <div class="scorebar">
+              <span>Trust</span>${bar(s.trust)}<span>${s.trust}</span>
+              <span>API/AI</span>${bar(s.api_ai)}<span>${s.api_ai}</span>
+              <span>DD model</span>${bar(s.dd_model)}<span>${s.dd_model}</span>
+              <span>Payout</span>${bar(s.payout_safety)}<span>${s.payout_safety}</span>
+            </div>
+            <div>
+              <span class="pill ok">${f.rules.dd_type} DD</span>
+              <span class="pill">${f.rules.max_dd}</span>
+              <span class="pill ${/none/i.test(f.rules.consistency) ? "ok" : "warn"}">Consistency: ${f.rules.consistency}</span>
+            </div>
+            <p class="meta" style="margin-top:0.55rem"><strong style="color:var(--ink)">Automation:</strong> ${f.automation.summary}</p>
+            <p class="meta"><strong style="color:var(--ink)">Fit:</strong> ${f.fit_for_us}</p>
+            <p class="meta"><strong style="color:var(--b)">Watch:</strong> ${f.watchouts}</p>
+            <p class="meta"><a href="${f.links.site}" target="_blank" rel="noopener">Official site</a> · ${f.links.rules_hint}</p>
+          </article>`;
+      }).join("");
+
+      document.querySelector("#firmTable tbody").innerHTML = firms.map((f) => `
+        <tr>
+          <td>${f.rank}</td>
+          <td><strong>${f.name}</strong><div class="meta">${f.asset_class}</div></td>
+          <td class="num"><strong>${f.total_score}</strong></td>
+          <td>${f.rules.dd_type}</td>
+          <td>${f.rules.max_dd}</td>
+          <td>${f.rules.consistency}</td>
+          <td>${f.automation.api}</td>
+          <td>${f.rules.payout}</td>
+        </tr>
+      `).join("");
+
+      document.getElementById("avoidList").innerHTML = (data.avoid || [])
+        .map((a) => `<li><strong style="color:var(--ink)">${a.name}:</strong> ${a.reason}</li>`)
+        .join("");
+
+      const pb = data.playbook || {};
+      const risk = pb.risk_box_ftmo_shaped || {};
+      const futuresAlt = firms.find(f => f.id === pb.futures_alternate) || {};
+      document.getElementById("playbook").innerHTML = `
+        <div class="box">
+          <h3>Recommended path</h3>
+          <p><strong style="color:var(--ink)">Firm:</strong> ${(firms.find(f => f.id === pb.recommended_firm) || {}).name || pb.recommended_firm}</p>
+          <p><strong style="color:var(--ink)">Signal:</strong> ${pb.signal || "—"}</p>
+          <p>${pb.objective || ""}</p>
+          <p class="meta">Why: static floor + no consistency trap + mature EA/cTrader automation for CFD products closest to our residual-mom research.</p>
+        </div>
+        <div class="box">
+          <h3>Futures alternate — Tradeify Select Flex</h3>
+          <p><strong style="color:var(--ink)">Firm:</strong> ${futuresAlt.name || "Tradeify"} · score ${futuresAlt.total_score ?? "—"}</p>
+          <p>${pb.futures_path || ""}</p>
+          <p class="meta">${futuresAlt.fit_for_us || ""}</p>
+          <p class="meta"><strong style="color:var(--b)">Watch:</strong> ${futuresAlt.watchouts || ""}</p>
+        </div>
+        <div class="box">
+          <h3>Agent risk box (FTMO-shaped)</h3>
+          <ul class="checklist">
+            <li>${risk.per_trade_risk || ""}</li>
+            <li>${risk.daily_halt || ""}</li>
+            <li>${risk.path_soft || ""}</li>
+            <li>${risk.path_hard || ""}</li>
+            <li>${risk.consistency_self_rule || ""}</li>
+            <li>${risk.news || ""}</li>
+            <li>${risk.automation_hygiene || ""}</li>
+            <li>${risk.trade_count || ""}</li>
+          </ul>
+        </div>
+      `;
+
+      const books = data.strategy_books || [];
+      document.querySelector("#stratTable tbody").innerHTML = books.map((b) => {
+        const share = b.consistency && b.consistency.best_day_share;
+        return `
+          <tr>
+            <td>${b.label}</td>
+            <td class="${b.survived_prop_10 ? "up" : "down"}"><strong>${b.survived_prop_10 ? "OK" : "REJECT"}</strong></td>
+            <td class="${b.survived_retail_35 ? "up" : "down"}">${b.survived_retail_35 ? "OK" : "REJECT"}</td>
+            <td class="num">${pct(b.metrics.max_dd)}</td>
+            <td class="num">${num(b.metrics.sharpe)}</td>
+            <td class="num">${pct(b.metrics.cagr)}</td>
+            <td class="num">${share == null ? "—" : pct(share)}</td>
+          </tr>`;
+      }).join("");
+
+      const baseCurve = data.curves.prop_ftmo_template || data.curves.v2_corr_vol || [];
+      const labels = baseCurve.map((p) => p.date);
+      const datasets = [
+        { key: "spy", label: "SPY", dash: [4, 4], width: 1.2 },
+        { key: "v1", label: "Original RM", dash: [], width: 1.4 },
+        { key: "v2", label: "Optimized V2", dash: [3, 3], width: 1.5 },
+        { key: "v2_corr_vol", label: "V2 + anti-crowd + vol10", dash: [], width: 1.8 },
+        { key: "prop_ftmo_template", label: "Prop-compliant template", dash: [], width: 2.3 },
+      ].filter((d) => data.curves[d.key]).map((d) => ({
+        label: d.label,
+        data: data.curves[d.key].map((p) => p.equity),
+        borderColor: COLORS[d.key] || "#fff",
+        borderDash: d.dash,
+        tension: 0.05,
+        pointRadius: 0,
+        borderWidth: d.width,
+      }));
+
+      charts.push(new Chart(document.getElementById("stratChart"), {
+        type: "line",
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { labels: { color: "#8aa397", boxWidth: 10, font: { size: 11 } } } },
+          scales: {
+            x: { ticks: { color: "#8aa397", maxTicksLimit: 6, maxRotation: 0 }, grid: { color: "rgba(36,53,47,0.45)" } },
+            y: { ticks: { color: "#8aa397" }, grid: { color: "rgba(36,53,47,0.45)" } },
+          },
+        },
+      }));
+
+      document.getElementById("checklist").innerHTML = (pb.payout_checklist || [])
+        .map((t) => `<li>${t}</li>`).join("");
+      document.getElementById("warnings").innerHTML = (data.warnings || [])
+        .map((t) => `<li>${t}</li>`).join("");
+    }
+
+    load().then(render).catch((err) => {
+      document.getElementById("badges").innerHTML =
+        `<div class="badge warn"><strong>Failed</strong> · ${err.message}</div>`;
+    });
+  </script>
+</body>
+</html>

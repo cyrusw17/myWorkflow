@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Topstep 150K lab — Combine → Express Funded</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;520;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg0: #050507;
+      --bg1: #0c0e14;
+      --card: #12151e;
+      --ink: #ffffff;
+      --muted: #9aa3b2;
+      --line: #1e2433;
+      --blue: #2f6bff;
+      --blue2: #5b8cff;
+      --ok: #6ee7a8;
+      --bad: #ff6b7a;
+      --warn: #f0b429;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(900px 480px at 8% -8%, #152348 0%, transparent 55%),
+        radial-gradient(700px 400px at 100% 0%, #0d1428 0%, transparent 50%),
+        var(--bg0);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main { max-width: 1080px; margin: 0 auto; padding: 1.25rem 0.9rem 3.5rem; }
+    @media (min-width: 720px) { main { padding: 2rem 1.25rem 4rem; } }
+    nav.top { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    nav.top a {
+      color: var(--blue2); text-decoration: none; border: 1px solid var(--line);
+      background: var(--bg1); padding: 0.35rem 0.65rem; font-size: 0.82rem;
+    }
+    nav.top a.here { color: var(--ink); border-color: var(--blue); }
+    h1 {
+      font-family: Outfit, "IBM Plex Sans", sans-serif;
+      font-size: clamp(1.55rem, 5vw, 2.35rem); letter-spacing: -0.03em;
+      margin: 0 0 0.35rem; font-weight: 700;
+    }
+    .brand-mark {
+      font-family: Outfit, sans-serif; font-weight: 700; font-size: clamp(2rem, 7vw, 3rem);
+      letter-spacing: -0.04em; margin: 0 0 0.15rem; color: var(--ink);
+    }
+    .brand-mark span { color: var(--blue2); }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; max-width: 48rem; line-height: 1.45; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1rem; }
+    .badge {
+      border: 1px solid var(--line); background: var(--card);
+      padding: 0.4rem 0.7rem; font-size: 0.78rem; color: var(--muted);
+    }
+    .badge strong { color: var(--ink); }
+    .badge.ok { border-color: #1f6b4a; color: var(--ok); }
+    .badge.blue { border-color: var(--blue); color: var(--blue2); }
+    .badge.warn { border-color: #6b5420; color: var(--warn); }
+    .limits {
+      display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-bottom: 1rem;
+    }
+    @media (min-width: 800px) { .limits { grid-template-columns: repeat(4, 1fr); } }
+    .limit-card {
+      border: 1px solid var(--line); background: var(--card);
+      padding: 1rem 0.95rem 0.9rem; position: relative; overflow: hidden;
+    }
+    .limit-card::before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--blue);
+    }
+    .limit-card .label {
+      color: var(--muted); font-size: 0.7rem; letter-spacing: 0.12em;
+      text-transform: uppercase; margin: 0 0 0.4rem;
+    }
+    .limit-card .value {
+      font-size: clamp(1.5rem, 4vw, 2.1rem); font-weight: 700;
+      letter-spacing: -0.03em; margin: 0 0 0.3rem; line-height: 1;
+    }
+    .limit-card .desc { color: var(--muted); font-size: 0.8rem; margin: 0; line-height: 1.4; }
+    .pill {
+      display: inline-block; background: var(--blue); color: #fff;
+      font-size: 0.72rem; padding: 0.2rem 0.55rem; border-radius: 999px;
+      letter-spacing: 0.04em; margin-bottom: 0.55rem;
+    }
+    .panel {
+      border: 1px solid var(--line); background: rgba(12,14,20,0.92);
+      padding: 0.9rem 0.8rem 0.8rem; margin-bottom: 1rem;
+    }
+    .panel h2 {
+      margin: 0 0 0.7rem; font-size: 0.88rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em;
+    }
+    .hint { margin: 0 0 0.75rem; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+    .champ-grid {
+      display: grid; grid-template-columns: 1fr; gap: 0.75rem;
+    }
+    @media (min-width: 800px) { .champ-grid { grid-template-columns: 1fr 1fr; } }
+    .box {
+      border: 1px solid var(--line); background: rgba(5,5,7,0.55); padding: 0.8rem;
+    }
+    .box.primary { border-color: var(--blue); }
+    .box h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+    .box p { color: var(--muted); font-size: 0.82rem; line-height: 1.45; margin: 0.25rem 0; }
+    .chart-box { position: relative; width: 100%; height: 340px; }
+    .chart-box.sm { height: 260px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+    .tabs button {
+      border: 1px solid var(--line); background: var(--bg1); color: var(--muted);
+      padding: 0.3rem 0.65rem; font-size: 0.78rem; cursor: pointer;
+    }
+    .tabs button.on { color: var(--ink); border-color: var(--blue); background: #10182e; }
+    .checklist { color: var(--muted); font-size: 0.86rem; line-height: 1.5; padding-left: 1.1rem; }
+    .checklist li { margin-bottom: 0.35rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th, td { text-align: left; padding: 0.45rem 0.35rem; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 500; }
+    td.num { font-variant-numeric: tabular-nums; }
+    .up { color: var(--ok); } .down { color: var(--bad); }
+    footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
+    a { color: var(--blue2); }
+    .select-btn {
+      display: inline-block; margin-top: 0.65rem; background: #e8ecf4; color: #0a0a0a;
+      border: none; padding: 0.55rem 1.1rem; font-weight: 600; font-size: 0.85rem;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="top">
+      <a href="./index.html">Bake-off</a>
+      <a href="./confluence-lab.html">Confluence boost</a>
+      <a href="./dd-lab.html">V2 drawdown lab</a>
+      <a href="./ftmo-lab.html">$25k prop lab</a>
+      <a class="here" href="./topstep-lab.html">Topstep 150K</a>
+      <a href="./funded-lab.html">Funded prop lab</a>
+      <a href="./rp-dual-lab.html">RP + Dual family</a>
+    </nav>
+
+    <div class="pill">Standard · 150K Buying Power</div>
+    <p class="brand-mark">Top<span>step</span></p>
+    <h1>Trading Combine lab</h1>
+    <p class="sub">
+      Screen <strong>CME futures</strong> books under Topstep rules, then run <strong>one</strong> winner across
+      Combine → Express Funded — futures only (no stocks / FX spot / CFDs), no challenge-pace speedups.
+      Account: <strong>$150K</strong> · target <strong>$9,000</strong> · MLL <strong>$4,500</strong> ·
+      max position <strong>15</strong> (Combine flat / XFA scaling).
+      XFA payouts follow official Standard / Consistency paths (90/10).
+    </p>
+
+    <div class="limits">
+      <div class="limit-card">
+        <p class="label">Account</p>
+        <p class="value">$150K</p>
+        <p class="desc">Buying power · Combine $199 · Reset $199 · XFA activation $149</p>
+      </div>
+      <div class="limit-card">
+        <p class="label">Profit target</p>
+        <p class="value" style="color:var(--blue2)">$9,000</p>
+        <p class="desc">Best day ≤ 50% of Combine profit (consistency gate)</p>
+      </div>
+      <div class="limit-card">
+        <p class="label">Max loss limit</p>
+        <p class="value" style="color:var(--bad)">$4,500</p>
+        <p class="desc">Trailing vs EOD high-water · hit MLL = account closed</p>
+      </div>
+      <div class="limit-card">
+        <p class="label">Max position</p>
+        <p class="value">15</p>
+        <p class="desc">Combine hard cap · XFA scales 3→15 by balance</p>
+      </div>
+    </div>
+
+    <div class="row" id="badges"></div>
+    <p class="hint" id="disclaimer"></p>
+
+    <section class="panel">
+      <h2>Strategy — one CME futures book</h2>
+      <div class="box primary" id="stratCard"></div>
+      <p class="hint" id="marketHint" style="margin-top:0.75rem"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Futures-book screen (Topstep Combine MC)</h2>
+      <p class="hint" id="screenHint">CME futures only — ranked by (pass − MLL fail), then days to pass.</p>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Strategy</th>
+              <th>Pass</th>
+              <th>MLL fail</th>
+              <th>Timeout</th>
+              <th>Avg days</th>
+            </tr>
+          </thead>
+          <tbody id="screenBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Trading Combine path</h2>
+      <p class="hint">Dollar PnL on $150k notional · MLL = HWM − $4,500. Pass when balance ≥ $9,000 and consistency ≤ 50%.</p>
+      <div class="row" id="combineBadges"></div>
+      <div class="chart-box"><canvas id="combineChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Express Funded — Standard vs Consistency</h2>
+      <p class="hint" id="xfaHint">
+        Standard: 5 winning days of $150+ → withdraw ≤50% (cap $5k), keep 90%.
+        Consistency: ≥3 days + 40% best-day rule → withdraw ≤50% (cap $6k), keep 90%.
+        After any payout, MLL locks at $0. Position size follows the 150K Scaling Plan (3→15).
+      </p>
+      <div class="tabs" id="xfaTabs"></div>
+      <div class="row" id="xfaBadges"></div>
+      <div class="chart-box"><canvas id="xfaChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <h2>Random-start Combine stress</h2>
+      <p class="hint">Random Combine launches — fail = pierce trailing $4,500 MLL. Same single strategy, no pace overlays.</p>
+      <div class="champ-grid" id="mcCards"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Position size rule</h2>
+      <p class="hint">Combine allows the full 15 minis. Express Funded replaces that with the Scaling Plan — size is set from prior EOD balance.</p>
+      <div class="champ-grid" id="positionCards"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Payout rules (Express Funded)</h2>
+      <ul class="checklist" id="rulesList"></ul>
+    </section>
+
+    <footer>
+      Generate: <code>python3 -m src.run_topstep_lab</code> ·
+      <a href="https://www.topstep.com/express-funded-account-rules" target="_blank" rel="noopener">Official XFA rules</a> ·
+      Research proxy ≠ live TopstepX.
+    </footer>
+  </main>
+
+  <script>
+    const usd = (v) => {
+      if (v == null || Number.isNaN(Number(v))) return "—";
+      const n = Number(v);
+      const sign = n < 0 ? "-" : "";
+      return sign + "$" + Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    };
+    const pct = (v) => (v == null || Number.isNaN(Number(v)) ? "—" : (Number(v) * 100).toFixed(1) + "%");
+    const num = (v, d = 1) => (v == null || Number.isNaN(Number(v)) ? "—" : Number(v).toFixed(d));
+
+    async function main() {
+      const res = await fetch(`./data/topstep_lab.json?v=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Missing topstep_lab.json — run python3 -m src.run_topstep_lab");
+      const data = await res.json();
+      const acc = data.account || {};
+      const strat = data.strategy || {};
+      const combine = data.combine || {};
+      const mc = data.random_start_combine || {};
+      const xfaFrom = data.express_from_combine_passes || {};
+
+      document.getElementById("disclaimer").textContent = data.disclaimer || "";
+      document.getElementById("badges").innerHTML = [
+        `<div class="badge blue"><strong>${strat.name || "—"}</strong> · single book</div>`,
+        `<div class="badge">Max position <strong>${acc.max_contracts || 15}</strong> contracts</div>`,
+        `<div class="badge ${combine.status === "pass" ? "ok" : combine.status === "fail_mll" ? "warn" : ""}">Combine <strong>${combine.status || "—"}</strong> · ${combine.days || 0}d · ${usd(combine.end_balance)}</div>`,
+        `<div class="badge ok">XFA trader locked · Std ${usd(data.express_standard?.locked_trader)} · Cons ${usd(data.express_consistency?.locked_trader)}</div>`,
+      ].join("");
+
+      document.getElementById("stratCard").innerHTML = `
+        <h3>${strat.name || strat.id || "—"}</h3>
+        <p><strong style="color:var(--ink)">${strat.id || ""}</strong> · ${strat.family || ""} · futures</p>
+        <p>${strat.thesis || ""}</p>
+        <p>Markets: <strong style="color:var(--ink)">${strat.markets || "CME"}</strong></p>
+        <p>${strat.note || ""}</p>
+        <p>Sharpe ${num(data.metrics?.sharpe)} · CAGR ${pct(data.metrics?.cagr)} · MaxDD ${pct(data.metrics?.max_dd)}</p>
+        <a class="select-btn" href="https://www.topstep.com/" target="_blank" rel="noopener">Select · Topstep</a>
+      `;
+
+      const market = data.market || {};
+      const uni = data.universe || {};
+      document.getElementById("marketHint").textContent =
+        (market.note || "Futures only.") +
+        (uni.tickers ? " Universe: " + uni.tickers.join(", ") + "." : "");
+
+      const screen = data.screen || {};
+      document.getElementById("screenHint").textContent =
+        screen.note ||
+        "CME futures only — ranked by (pass − MLL fail), then days to pass.";
+      document.getElementById("screenBody").innerHTML = (screen.rows || [])
+        .map((r, i) => {
+          const win = r.id === strat.id;
+          return `<tr style="${win ? "background:#10182e" : ""}">
+            <td>${i + 1}</td>
+            <td>${win ? "<strong>" : ""}${r.name || r.id}${win ? " · winner</strong>" : ""}
+              <div style="color:var(--muted);font-size:0.75rem">${r.markets || ""}</div></td>
+            <td class="num">${pct(r.pass_rate)}</td>
+            <td class="num ${(r.fail_mll_rate || 0) > 0 ? "down" : "up"}">${pct(r.fail_mll_rate)}</td>
+            <td class="num">${pct(r.timeout_rate)}</td>
+            <td class="num">${r.avg_days_to_pass == null ? "—" : num(r.avg_days_to_pass, 0)}</td>
+          </tr>`;
+        })
+        .join("");
+
+      document.getElementById("combineBadges").innerHTML = [
+        `<div class="badge ${combine.status === "pass" ? "ok" : ""}"><strong>${combine.status}</strong></div>`,
+        `<div class="badge">Days <strong>${combine.days}</strong></div>`,
+        `<div class="badge">End <strong>${usd(combine.end_balance)}</strong></div>`,
+        `<div class="badge">Min <strong>${usd(combine.min_balance)}</strong></div>`,
+        `<div class="badge">Best day <strong>${usd(combine.best_day)}</strong></div>`,
+        `<div class="badge">Consistency <strong>${combine.consistency_ratio == null ? "—" : pct(combine.consistency_ratio)}</strong></div>`,
+      ].join("");
+
+      const charts = [];
+      const cCurve = combine.curve || [];
+      charts.push(new Chart(document.getElementById("combineChart"), {
+        type: "line",
+        data: {
+          labels: cCurve.map((p) => p.date),
+          datasets: [
+            {
+              label: "Combine balance ($)",
+              data: cCurve.map((p) => p.balance),
+              borderColor: "#2f6bff",
+              borderWidth: 2.2,
+              pointRadius: 0,
+              tension: 0.05,
+            },
+            {
+              label: "MLL",
+              data: cCurve.map((p) => p.mll),
+              borderColor: "#ff6b7a",
+              borderDash: [5, 4],
+              borderWidth: 1.6,
+              pointRadius: 0,
+              tension: 0,
+            },
+            {
+              label: "Profit target $9k",
+              data: cCurve.map(() => acc.profit_target || 9000),
+              borderColor: "#ffffff",
+              borderDash: [4, 3],
+              borderWidth: 1.2,
+              pointRadius: 0,
+              tension: 0,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: "#9aa3b2", boxWidth: 10, font: { size: 11 } } },
+            title: {
+              display: true,
+              text: `Combine · ${combine.status} · start ${combine.start || "—"}`,
+              color: "#9aa3b2",
+              font: { size: 12 },
+            },
+          },
+          scales: {
+            x: { ticks: { color: "#9aa3b2", maxTicksLimit: 8 }, grid: { color: "#1e2433" } },
+            y: { ticks: { color: "#9aa3b2" }, grid: { color: "#1e2433" } },
+          },
+        },
+      }));
+
+      const xfaPacks = {
+        standard: data.express_standard,
+        consistency: data.express_consistency,
+      };
+      const tabs = document.getElementById("xfaTabs");
+      const xfaBadges = document.getElementById("xfaBadges");
+      let xfaKey = "standard";
+      const drawXfa = (key) => {
+        xfaKey = key;
+        [...tabs.querySelectorAll("button")].forEach((b) => b.classList.toggle("on", b.dataset.k === key));
+        const x = xfaPacks[key] || {};
+        const curve = x.curve || [];
+        xfaBadges.innerHTML = [
+          `<div class="badge ${x.status === "survived" ? "ok" : x.status === "fail_mll" ? "warn" : ""}"><strong>${x.status}</strong> · ${x.path}</div>`,
+          `<div class="badge">Days <strong>${x.days || 0}</strong></div>`,
+          `<div class="badge">Payouts <strong>${x.n_payouts || 0}</strong></div>`,
+          `<div class="badge">Contracts (end) <strong>${(curve.length ? curve[curve.length-1].contracts : "—") ?? "—"}</strong> / ${acc.max_contracts || 15}</div>`,
+          `<div class="badge ok">Trader locked <strong>${usd(x.locked_trader)}</strong></div>`,
+          `<div class="badge">End bal <strong>${usd(x.end_balance)}</strong></div>`,
+          `<div class="badge">Min <strong>${usd(x.min_balance)}</strong></div>`,
+        ].join("");
+        const existing = charts.find((c) => c.canvas && c.canvas.id === "xfaChart");
+        if (existing) { existing.destroy(); charts.splice(charts.indexOf(existing), 1); }
+        charts.push(new Chart(document.getElementById("xfaChart"), {
+          type: "line",
+          data: {
+            labels: curve.map((p) => p.date),
+            datasets: [
+              {
+                label: "XFA balance ($)",
+                data: curve.map((p) => p.balance),
+                borderColor: "#5b8cff",
+                borderWidth: 2.2,
+                pointRadius: 0,
+                tension: 0.05,
+              },
+              {
+                label: "Cumulative trader payouts",
+                data: curve.map((p) => p.locked_trader),
+                borderColor: "#ffffff",
+                borderWidth: 1.8,
+                pointRadius: 0,
+                tension: 0.05,
+              },
+              {
+                label: "MLL",
+                data: curve.map((p) => p.mll),
+                borderColor: "#ff6b7a",
+                borderDash: [5, 4],
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { labels: { color: "#9aa3b2", boxWidth: 10, font: { size: 11 } } },
+              title: {
+                display: true,
+                text: `${key === "standard" ? "Standard" : "Consistency"} path · ${x.n_payouts || 0} payout(s) · trader ${usd(x.locked_trader)}`,
+                color: "#9aa3b2",
+                font: { size: 12 },
+              },
+            },
+            scales: {
+              x: { ticks: { color: "#9aa3b2", maxTicksLimit: 8 }, grid: { color: "#1e2433" } },
+              y: { ticks: { color: "#9aa3b2" }, grid: { color: "#1e2433" } },
+            },
+          },
+        }));
+      };
+      tabs.innerHTML = [
+        `<button type="button" data-k="standard">Standard (5× $150 days · cap $5k)</button>`,
+        `<button type="button" data-k="consistency">Consistency (3 days · 40% · cap $6k)</button>`,
+      ].join("");
+      tabs.onclick = (e) => {
+        const b = e.target.closest("button");
+        if (b) drawXfa(b.dataset.k);
+      };
+      drawXfa("standard");
+
+      document.getElementById("mcCards").innerHTML = [
+        `<div class="box primary"><h3>Combine pass rate</h3><p><strong style="color:var(--ink);font-size:1.4rem">${pct(mc.pass_rate)}</strong></p><p>${mc.passes || 0} passes / ${mc.n || 0} scored random starts</p></div>`,
+        `<div class="box"><h3>MLL fail rate</h3><p><strong style="color:${(mc.fail_mll_rate||0)>0?'var(--bad)':'var(--ok)'};font-size:1.4rem">${pct(mc.fail_mll_rate)}</strong></p><p>${mc.zero_fail_mll ? "Zero MLL breaches in sample" : (mc.fails_mll || 0) + " MLL kills"} · timeouts ${pct(mc.timeout_rate)}</p></div>`,
+        `<div class="box"><h3>Days to pass</h3><p><strong style="color:var(--ink);font-size:1.4rem">${mc.avg_days_to_pass == null ? "—" : num(mc.avg_days_to_pass, 0)}</strong> avg</p><p>Median ${mc.median_days_to_pass == null ? "—" : num(mc.median_days_to_pass, 0)} · ${mc.n_draws || 150} draws · seed ${mc.seed ?? 42}</p></div>`,
+        `<div class="box"><h3>XFA after Combine passes</h3><p>Trader locked avg <strong style="color:var(--ok)">${usd(xfaFrom.avg_locked_trader)}</strong></p><p>MLL breach ${pct(xfaFrom.mll_breach_rate)} · payout hit ${pct(xfaFrom.payout_hit_rate)} · n=${xfaFrom.n || 0}</p></div>`,
+      ].join("");
+
+      document.getElementById("rulesList").innerHTML = (data.rules_notes || []).map((t) => `<li>${t}</li>`).join("");
+
+      const pos = acc.position_rules || {};
+      const tiers = pos.xfa_scaling_150k || [];
+      document.getElementById("positionCards").innerHTML = [
+        `<div class="box primary"><h3>Combine · flat ${acc.max_contracts || 15}</h3><p>${pos.combine || "Hard cap 15 mini contracts."}</p><p>Day PnL clipped to full-size ceiling (${usd(acc.max_day_pnl_at_full_size || 7500)}).</p></div>`,
+        `<div class="box"><h3>XFA Scaling Plan</h3><p>${(tiers.map((t) => {
+          const label = t.balance_lt == null ? "$4,500+" : "< $" + Number(t.balance_lt).toLocaleString();
+          return label + " → <strong style='color:var(--ink)'>" + t.contracts + "</strong>";
+        }).join("<br/>")) || "3 → 4 → 5 → 10 → 15"}</p><p>${pos.note || ""}</p></div>`,
+      ].join("");
+    }
+
+    main().catch((e) => {
+      document.body.insertAdjacentHTML("beforeend", `<p style="color:#ff6b7a;padding:1rem">Failed to load topstep_lab.json: ${e}</p>`);
+    });
+  </script>
+</body>
+</html>

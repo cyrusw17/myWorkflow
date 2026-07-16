@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Agent — Strategy Bake-Off vs SPY</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg0: #0c1210;
+      --bg1: #14201c;
+      --ink: #e8f0ec;
+      --muted: #8aa397;
+      --line: #24352f;
+      --a: #3dd6c6;
+      --b: #f0a34a;
+      --spy: #7aa2ff;
+      --vm: #c4b5fd;
+      --bad: #f07178;
+      --ok: #7dffb3;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #1a3a32 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #2a2418 0%, transparent 50%),
+        var(--bg0);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.25rem 0.9rem 3.5rem;
+    }
+    @media (min-width: 720px) {
+      main { padding: 2rem 1.25rem 4rem; }
+    }
+    h1 {
+      font-size: clamp(1.45rem, 5.5vw, 2.4rem);
+      letter-spacing: -0.03em;
+      margin: 0 0 0.35rem;
+      font-weight: 700;
+    }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; max-width: 42rem; line-height: 1.45; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-bottom: 1.1rem; }
+    .badge {
+      border: 1px solid var(--line);
+      background: var(--bg1);
+      padding: 0.35rem 0.6rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      max-width: 100%;
+    }
+    @media (min-width: 720px) {
+      .badge { font-size: 0.85rem; padding: 0.4rem 0.7rem; }
+    }
+    .badge strong { color: var(--ink); font-weight: 600; }
+    .badge.ok { border-color: #2d6b4f; color: var(--ok); }
+    .badge.warn { border-color: #6b4a2d; color: var(--b); }
+    .panel {
+      border: 1px solid var(--line);
+      background: rgba(20, 32, 28, 0.85);
+      padding: 0.85rem 0.75rem 0.7rem;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    @media (min-width: 720px) {
+      .panel { padding: 1rem 1rem 0.75rem; margin-bottom: 1.25rem; }
+    }
+    .panel h2 {
+      margin: 0 0 0.75rem;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .panel h3 {
+      margin: 0 0 0.35rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .panel .hint {
+      margin: 0 0 0.75rem;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+    .legend-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem 0.85rem;
+      margin: 0 0 0.85rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .legend-row i {
+      display: inline-block;
+      width: 0.85rem;
+      height: 0.2rem;
+      margin-right: 0.35rem;
+      vertical-align: middle;
+      border-radius: 1px;
+    }
+    .windows {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.85rem;
+    }
+    @media (min-width: 960px) {
+      .windows { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+    }
+    .window {
+      border: 1px solid var(--line);
+      background: rgba(12, 18, 16, 0.55);
+      padding: 0.75rem 0.65rem 0.55rem;
+      min-width: 0;
+    }
+    @media (min-width: 720px) {
+      .window { padding: 0.85rem 0.85rem 0.65rem; }
+    }
+    .window-head {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.2rem;
+      margin-bottom: 0.45rem;
+    }
+    @media (min-width: 960px) {
+      .window-head {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.5rem;
+      }
+    }
+    .window-head h3 { margin: 0; }
+    .window-range {
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+    .returns {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.3rem 0.65rem;
+      margin: 0.65rem 0 0.1rem;
+      font-size: 0.72rem;
+    }
+    .returns span {
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .returns strong { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .returns .up { color: var(--ok); }
+    .returns .down { color: var(--bad); }
+    .chart-box {
+      position: relative;
+      width: 100%;
+      height: 270px;
+    }
+    .chart-box.full {
+      height: 360px;
+    }
+    @media (min-width: 720px) {
+      .chart-box { height: 280px; }
+      .chart-box.full { height: 400px; }
+    }
+    @media (min-width: 960px) {
+      .chart-box { height: 260px; }
+      .chart-box.full { height: 440px; }
+    }
+    .chart-box canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+      max-width: 100%;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.55rem 0.45rem;
+      border-bottom: 1px solid var(--line);
+    }
+    th { color: var(--muted); font-weight: 500; }
+    td.num { font-variant-numeric: tabular-nums; }
+    .warnings { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+    .warnings li { margin-bottom: 0.35rem; }
+    footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
+    a { color: var(--a); }
+    .pair-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.85rem;
+    }
+    @media (min-width: 900px) {
+      .pair-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .pair-card {
+      border: 1px solid var(--line);
+      background: rgba(12, 18, 16, 0.55);
+      padding: 0.75rem 0.7rem 0.55rem;
+      min-width: 0;
+    }
+    .pair-card h3 {
+      margin: 0 0 0.2rem;
+      font-size: 0.92rem;
+      color: var(--ink);
+    }
+    .pair-meta {
+      color: var(--muted);
+      font-size: 0.72rem;
+      margin-bottom: 0.45rem;
+      line-height: 1.35;
+    }
+    .pair-card .chart-box { height: 210px; }
+    @media (min-width: 720px) {
+      .pair-card .chart-box { height: 230px; }
+    }
+    .delta-up { color: var(--ok); }
+    .delta-down { color: var(--bad); }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="top" style="display:flex;flex-wrap:wrap;gap:0.55rem;margin-bottom:1.1rem">
+      <a href="./index.html" style="color:var(--ink);text-decoration:none;border:1px solid #2d6b4f;background:var(--bg1);padding:0.35rem 0.65rem;font-size:0.82rem">Bake-off dashboard</a>
+      <a href="./confluence-lab.html" style="color:var(--a);text-decoration:none;border:1px solid var(--line);background:var(--bg1);padding:0.35rem 0.65rem;font-size:0.82rem">Confluence boost lab</a>
+      <a href="./dd-lab.html" style="color:var(--a);text-decoration:none;border:1px solid var(--line);background:var(--bg1);padding:0.35rem 0.65rem;font-size:0.82rem">V2 drawdown lab</a>
+      <a href="./funded-lab.html" style="color:var(--a);text-decoration:none;border:1px solid var(--line);background:var(--bg1);padding:0.35rem 0.65rem;font-size:0.82rem">Funded prop lab</a>
+      <a href="./ftmo-lab.html" style="color:var(--a);text-decoration:none;border:1px solid var(--line);background:var(--bg1);padding:0.35rem 0.65rem;font-size:0.82rem">FTMO Challenge lab</a>
+      <a href="./topstep-lab.html" style="color:var(--a);text-decoration:none;border:1px solid var(--line);background:var(--bg1);padding:0.35rem 0.65rem;font-size:0.82rem">Topstep 150K</a>
+      <a href="./rp-dual-lab.html" style="color:var(--a);text-decoration:none;border:1px solid var(--line);background:var(--bg1);padding:0.35rem 0.65rem;font-size:0.82rem">RP + Dual family</a>
+    </nav>
+
+    <h1>Strategy bake-off vs SPY</h1>
+    <p class="sub">Residual momentum (Tech 80%) with drawdown-safe confluence overlays. Only MaxDD≤35% survivors are shown on the graphs.</p>
+
+    <div class="row" id="badges"></div>
+
+    <section class="panel">
+      <h2>Top confluence survivors vs original Resid Mom</h2>
+      <p class="hint">Original established book is <strong>Resid Mom Tech 80%</strong>. Confluence overlays (MaxDD≤35%) are shown for comparison — charts still include the original setup.</p>
+      <div class="chart-box full">
+        <canvas id="techSweepChart"></canvas>
+      </div>
+      <div style="overflow-x:auto; margin-top:0.85rem">
+        <table id="techSweepTable">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Strategy</th>
+              <th>Score</th>
+              <th>CAGR</th>
+              <th>Sharpe</th>
+              <th>Max DD</th>
+              <th>Calmar</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="hint" id="confluenceTheses" style="margin-top:0.75rem"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Horizon windows — original RM + top survivors vs SPY</h2>
+      <p class="hint">Each chart is rebased to $1 at the start of the window so 3M / 6M / 1Y are visually comparable.</p>
+      <div class="legend-row" id="sharedLegend"></div>
+      <div class="windows" id="windows"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Full sample equity — original RM + top survivors vs SPY</h2>
+      <div class="chart-box full">
+        <canvas id="equityChart"></canvas>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Metrics (full sample)</h2>
+      <div style="overflow-x:auto">
+        <table id="metricsTable">
+          <thead>
+            <tr>
+              <th>Book</th>
+              <th>CAGR</th>
+              <th>Vol</th>
+              <th>Sharpe</th>
+              <th>Sortino</th>
+              <th>Max DD</th>
+              <th>Calmar</th>
+              <th>Hit</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>V1 vs V2 — optimized confidence sizing</h2>
+      <p class="hint">
+        <strong>V1</strong> = equal-weight sleeves (frozen).
+        <strong>V2</strong> = re-optimized mapping from confidence → portfolio:
+        mild shrink-to-equal tilt + cash buffer when mean confidence is weak.
+        Same confluence overlays. Charts are one pair each.
+      </p>
+      <div class="row" id="v2Scoreboard"></div>
+      <p class="hint" id="v2SizeHint" style="margin-top:0"></p>
+      <div style="overflow-x:auto; margin: 0.75rem 0 1rem">
+        <table id="v1v2Table">
+          <thead>
+            <tr>
+              <th>Strategy</th>
+              <th>Winner</th>
+              <th>V1 score</th>
+              <th>V2 score</th>
+              <th>Δ score</th>
+              <th>V1 MaxDD</th>
+              <th>V2 MaxDD</th>
+              <th>V1 Sharpe</th>
+              <th>V2 Sharpe</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pair-grid" id="pairGrid"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Trade confidence</h2>
+      <p class="hint">0–100 score on every residual-momentum entry. On <strong>V1</strong> it is diagnostic only. On <strong>V2</strong> it drives a mild within-sleeve tilt and scales gross exposure (cash when conviction is weak). Table below is from the V1 path.</p>
+      <div class="row" id="confidenceBadges"></div>
+      <div style="overflow-x:auto; margin-top:0.75rem">
+        <table id="confidenceTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Ticker</th>
+              <th>Sleeve</th>
+              <th>Weight</th>
+              <th>Confidence</th>
+              <th>Rank</th>
+              <th>Score z</th>
+              <th>Regime</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Assumptions & warnings</h2>
+      <ul class="warnings" id="warnings"></ul>
+    </section>
+
+    <footer>
+      Generated by <code>python -m src.run_bakeoff</code> ·
+      <a href="https://github.com/cyrusw17/myWorkflow">github.com/cyrusw17/myWorkflow</a>
+      · <a href="./resume/">Ethan Cardenas resume</a>
+    </footer>
+  </main>
+
+  <script>
+    const pct = (x) => (x * 100).toFixed(2) + "%";
+    const num = (x) => (x == null ? "—" : Number(x).toFixed(2));
+    const TOP_COLORS = ["#3dd6c6", "#f0a34a", "#7aa2ff", "#e879a9", "#c4b5fd"];
+    const WINDOWS = [
+      { id: "3m", label: "3 months", days: 91 },
+      { id: "6m", label: "6 months", days: 182 },
+      { id: "1y", label: "1 year", days: 365 },
+    ];
+
+    let chartBooks = [];
+
+    async function load() {
+      const res = await fetch(`./data/bakeoff.json?v=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Missing bakeoff.json — run the bake-off CLI");
+      return res.json();
+    }
+
+    function buildChartBooks(data) {
+      const top = (data.confluence_bakeoff && data.confluence_bakeoff.top) || [];
+      const books = [
+        { key: "spy_bh", label: "SPY B&H", color: "#7aa2ff", width: 1.5, dash: [] },
+        { key: "spy_vol_match", label: "SPY vol-match", color: "#c4b5fd", width: 1.25, dash: [4, 4] },
+      ];
+      // Established original residual-momentum book (Tech 80%) — always on graphs.
+      if (data.curves && data.curves.conf_base) {
+        books.push({
+          key: "conf_base",
+          label: "Resid Mom Tech 80%",
+          color: "#7dffb3",
+          width: 2.5,
+          dash: [],
+        });
+      }
+      top.forEach((r, i) => {
+        if (r.curve_key === "conf_base") return; // already shown as original
+        books.push({
+          key: r.curve_key,
+          label: `#${r.rank} ${r.label}`,
+          color: TOP_COLORS[i % TOP_COLORS.length],
+          width: i === 0 ? 2.2 : 1.6,
+          dash: [],
+        });
+      });
+      if (top.length === 0 && !(data.curves && data.curves.conf_base)) {
+        books.push(
+          { key: "strat_a", label: "Strat A", color: "#3dd6c6", width: 2, dash: [] },
+          { key: "strat_b", label: "Strat B LSC", color: "#f0a34a", width: 2, dash: [] },
+        );
+      }
+      chartBooks = books;
+      return books;
+    }
+
+    function renderBadges(data) {
+      const el = document.getElementById("badges");
+      const staleHours = (Date.now() - Date.parse(data.generated_at)) / 36e5;
+      const stale = staleHours > 24 * 14;
+      const a = (data.assumptions && data.assumptions.strategy_a) || {};
+      const conf = data.confluence_bakeoff || {};
+      const selected = a.selected_label || a.selected_confluence || "—";
+      const survivors = conf.survivors != null ? `${conf.survivors}/${conf.tested}` : "—";
+      el.innerHTML = `
+        <div class="badge ${stale ? "warn" : "ok"}"><strong>${stale ? "Data may be stale" : "Results loaded"}</strong> · ${new Date(data.generated_at).toUTCString()}</div>
+        <div class="badge"><strong>Decision</strong> · ${data.decision_status}</div>
+        <div class="badge"><strong>Survivors</strong> · ${survivors} (MaxDD≤35%)</div>
+        <div class="badge ok"><strong>Original RM</strong> · Tech 80%</div>
+        <div class="badge ok"><strong>Strat A</strong> · ${selected}</div>
+        <div class="badge"><strong>Score</strong> · ${a.selected_score != null ? Number(a.selected_score).toFixed(3) : "—"}</div>
+      `;
+    }
+
+    function renderConfluencePanel(data) {
+      const conf = data.confluence_bakeoff || {};
+      const top = conf.top || [];
+      const body = document.querySelector("#techSweepTable tbody");
+      const theses = document.getElementById("confluenceTheses");
+      if (!top.length) {
+        body.innerHTML = `<tr><td colspan="7">No confluence results.</td></tr>`;
+        if (theses) theses.textContent = "";
+        return;
+      }
+      body.innerHTML = top.map((r) => `
+        <tr>
+          <td>#${r.rank}</td>
+          <td>${r.label}</td>
+          <td class="num">${num(r.score)}</td>
+          <td class="num">${pct(r.cagr)}</td>
+          <td class="num">${num(r.sharpe)}</td>
+          <td class="num">${pct(r.max_dd)}</td>
+          <td class="num">${num(r.calmar)}</td>
+        </tr>
+      `).join("");
+      if (theses) {
+        theses.innerHTML = top.map((r) => `<strong>#${r.rank} ${r.label}:</strong> ${r.thesis}`).join("<br/>");
+      }
+
+      const firstKey = (data.curves.conf_base && "conf_base") || (top[0] && top[0].curve_key) || "strat_a";
+      const labels = ((data.curves[firstKey] || data.curves.strat_a) || []).map((p) => p.date);
+      const datasets = [
+        {
+          label: "SPY B&H",
+          data: (data.curves.spy_bh || []).map((p) => p.equity),
+          borderColor: "#7aa2ff",
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: 1.5,
+        },
+        ...(data.curves.conf_base ? [{
+          label: "Resid Mom Tech 80%",
+          data: data.curves.conf_base.map((p) => p.equity),
+          borderColor: "#7dffb3",
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: 2.5,
+        }] : []),
+        ...top.filter((r) => r.curve_key !== "conf_base").map((r, i) => ({
+          label: `#${r.rank} ${r.label}`,
+          data: (data.curves[r.curve_key] || []).map((p) => p.equity),
+          borderColor: TOP_COLORS[i % TOP_COLORS.length],
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: i === 0 ? 2.2 : 1.6,
+        })),
+      ];
+      charts.push(new Chart(document.getElementById("techSweepChart"), {
+        type: "line",
+        data: { labels, datasets },
+        options: chartOptions({ legend: true, maxTicks: isMobile() ? 4 : 8 }),
+      }));
+    }
+
+    function renderTable(metrics) {
+      const body = document.querySelector("#metricsTable tbody");
+      body.innerHTML = metrics.map(m => `
+        <tr>
+          <td>${m.name}</td>
+          <td class="num">${pct(m.cagr)}</td>
+          <td class="num">${pct(m.ann_vol)}</td>
+          <td class="num">${num(m.sharpe)}</td>
+          <td class="num">${num(m.sortino)}</td>
+          <td class="num">${pct(m.max_dd)}</td>
+          <td class="num">${num(m.calmar)}</td>
+          <td class="num">${pct(m.hit_rate)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function parseDate(s) {
+      return new Date(s + "T00:00:00Z");
+    }
+
+    function sliceWindow(points, days) {
+      if (!points || !points.length) return [];
+      const end = parseDate(points[points.length - 1].date);
+      const startMs = end.getTime() - days * 86400000;
+      const sliced = points.filter((p) => parseDate(p.date).getTime() >= startMs);
+      if (!sliced.length) return [];
+      const base = sliced[0].equity || 1;
+      return sliced.map((p) => ({
+        date: p.date,
+        equity: p.equity / base,
+      }));
+    }
+
+    function windowReturn(points) {
+      if (!points || points.length < 2) return null;
+      return points[points.length - 1].equity / points[0].equity - 1;
+    }
+
+    const charts = [];
+    const isMobile = () => window.matchMedia("(max-width: 719px)").matches;
+
+    function chartOptions({ legend = true, maxTicks = 5 } = {}) {
+      const mobile = isMobile();
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        resizeDelay: 50,
+        interaction: { mode: "index", intersect: false },
+        layout: {
+          padding: mobile
+            ? { top: 2, right: 2, bottom: 2, left: 0 }
+            : { top: 4, right: 6, bottom: 0, left: 0 },
+        },
+        plugins: {
+          legend: {
+            display: legend,
+            position: mobile ? "bottom" : "top",
+            labels: {
+              color: "#c5d4cc",
+              boxWidth: mobile ? 10 : 12,
+              boxHeight: 2,
+              padding: mobile ? 8 : 12,
+              font: { size: mobile ? 10 : 11 },
+            },
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(3)}`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: "#8aa397",
+              maxTicksLimit: mobile ? Math.min(maxTicks, 3) : maxTicks,
+              maxRotation: 0,
+              autoSkip: true,
+              font: { size: mobile ? 9 : 11 },
+            },
+            grid: { color: "rgba(36,53,47,0.6)" },
+          },
+          y: {
+            ticks: {
+              color: "#8aa397",
+              font: { size: mobile ? 9 : 11 },
+              callback: (v) => Number(v).toFixed(2),
+            },
+            grid: { color: "rgba(36,53,47,0.6)" },
+          },
+        },
+      };
+    }
+
+    function datasetsFromBooks(curves, books) {
+      return books.map((book) => {
+        const pts = curves[book.key] || [];
+        return {
+          label: book.label,
+          data: pts.map((p) => p.equity),
+          borderColor: book.color,
+          tension: 0.05,
+          pointRadius: 0,
+          borderWidth: book.width,
+          borderDash: book.dash || [],
+        };
+      });
+    }
+
+    function retClass(x) {
+      if (x == null) return "";
+      return x >= 0 ? "up" : "down";
+    }
+
+    function formatRet(x) {
+      if (x == null) return "—";
+      const sign = x > 0 ? "+" : "";
+      return sign + pct(x);
+    }
+
+    function renderSharedLegend(books) {
+      const el = document.getElementById("sharedLegend");
+      el.innerHTML = books.map((book) =>
+        `<span><i style="background:${book.color};${(book.dash && book.dash.length) ? "opacity:0.75;" : ""}"></i>${book.label}</span>`
+      ).join("");
+    }
+
+    function renderWindows(data, books) {
+      const root = document.getElementById("windows");
+      root.innerHTML = WINDOWS.map((w) => `
+        <div class="window">
+          <div class="window-head">
+            <h3>${w.label}</h3>
+            <span class="window-range" id="range-${w.id}"></span>
+          </div>
+          <div class="chart-box">
+            <canvas id="chart-${w.id}"></canvas>
+          </div>
+          <div class="returns" id="rets-${w.id}"></div>
+        </div>
+      `).join("");
+
+      WINDOWS.forEach((w) => {
+        const sliced = {};
+        books.forEach((book) => {
+          sliced[book.key] = sliceWindow(data.curves[book.key], w.days);
+        });
+        const labels = (sliced.spy_bh && sliced.spy_bh.length
+          ? sliced.spy_bh
+          : (sliced[books[2] && books[2].key] || [])
+        ).map((p) => p.date);
+        const rangeEl = document.getElementById(`range-${w.id}`);
+        if (labels.length) {
+          rangeEl.textContent = `${labels[0]} → ${labels[labels.length - 1]}`;
+        }
+
+        charts.push(new Chart(document.getElementById(`chart-${w.id}`), {
+          type: "line",
+          data: {
+            labels,
+            datasets: books.map((book) => ({
+              label: book.label,
+              data: (sliced[book.key] || []).map((p) => p.equity),
+              borderColor: book.color,
+              tension: 0.05,
+              pointRadius: 0,
+              borderWidth: book.width,
+              borderDash: book.dash || [],
+            })),
+          },
+          options: chartOptions({ legend: false, maxTicks: 4 }),
+        }));
+
+        document.getElementById(`rets-${w.id}`).innerHTML = books.map((book) => {
+          const r = windowReturn(sliced[book.key]);
+          const short = book.label.replace(/^#\d+\s+/, "").replace("SPY vol-match", "Vol-match");
+          return `<span>${short}</span><strong class="${retClass(r)}">${formatRet(r)}</strong>`;
+        }).join("");
+      });
+    }
+
+    function renderFullChart(data, books) {
+      const labels = (data.curves.spy_bh || []).map((p) => p.date);
+      charts.push(new Chart(document.getElementById("equityChart"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: datasetsFromBooks(data.curves, books),
+        },
+        options: chartOptions({ legend: true, maxTicks: isMobile() ? 4 : 8 }),
+      }));
+    }
+
+    function renderWarnings(data) {
+      const ul = document.getElementById("warnings");
+      const a = data.assumptions;
+      const sa = a.strategy_a || {};
+      const items = [
+        `Cost model: ${a.cost_bps_per_turnover_or_entry} bps per turnover/entry.`,
+        `Universe: ${data.universe.join(", ")}.`,
+        `A params: residual mom Tech ${Math.round((sa.base_tech_weight || sa.tech_weight || 0.8) * 100)}% + confluence overlays · beta L=${sa.lookback_beta}, W=${sa.formation}.`,
+        `A selected: ${sa.selected_label || "—"} (score=${sa.selected_score != null ? Number(sa.selected_score).toFixed(3) : "—"}).`,
+        `A score method: ${sa.score_method || "—"}.`,
+        `Confluences: ${sa.confluences_tested || 20} tested · survivors ${sa.survivors != null ? sa.survivors : "—"}.`,
+        `B params: pool=${a.strategy_b.lookback_pool}d, hold=${a.strategy_b.hold_days}d — ${a.strategy_b.note}`,
+        ...(data.warnings || []),
+      ];
+      ul.innerHTML = items.map(t => `<li>${t}</li>`).join("");
+    }
+
+    function renderTradeConfidence(data) {
+      const block = data.trade_confidence || {};
+      const summary = block.summary || {};
+      const trades = (block.recent_trades || []).slice().reverse();
+      const badges = document.getElementById("confidenceBadges");
+      const body = document.querySelector("#confidenceTable tbody");
+      if (!badges || !body) return;
+
+      const buckets = summary.buckets || {};
+      badges.innerHTML = `
+        <div class="badge"><strong>Trades scored</strong> · ${block.n_trades ?? "—"}</div>
+        <div class="badge ok"><strong>Mean conf</strong> · ${summary.mean != null ? Number(summary.mean).toFixed(1) : "—"}</div>
+        <div class="badge"><strong>Median</strong> · ${summary.median != null ? Number(summary.median).toFixed(1) : "—"}</div>
+        <div class="badge"><strong>High ≥70</strong> · ${buckets["high_>=70"] ?? "—"}</div>
+        <div class="badge"><strong>Mid 40–70</strong> · ${buckets.mid_40_70 ?? "—"}</div>
+        <div class="badge warn"><strong>Low &lt;40</strong> · ${buckets["low_<40"] ?? "—"}</div>
+      `;
+
+      if (!trades.length) {
+        body.innerHTML = `<tr><td colspan="8">No scored trades yet.</td></tr>`;
+        return;
+      }
+      body.innerHTML = trades.map((t) => {
+        const c = t.confidence_components || {};
+        const conf = Number(t.confidence);
+        const klass = conf >= 70 ? "up" : conf < 40 ? "down" : "";
+        return `
+          <tr>
+            <td>${t.date}</td>
+            <td>${t.ticker}</td>
+            <td>${t.is_tech ? "tech" : "other"}</td>
+            <td class="num">${t.weight != null ? (100 * Number(t.weight)).toFixed(1) + "%" : "—"}</td>
+            <td class="num"><strong class="${klass}">${Number.isFinite(conf) ? conf.toFixed(1) : "—"}</strong></td>
+            <td class="num">${c.rank_edge != null ? Number(c.rank_edge).toFixed(0) : "—"}</td>
+            <td class="num">${c.score_z != null ? Number(c.score_z).toFixed(0) : "—"}</td>
+            <td class="num">${c.regime != null ? Number(c.regime).toFixed(0) : "—"}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderV1V2Compare(data) {
+      const block = data.v1_v2_compare || {};
+      const pairs = block.pairs || [];
+      const board = document.getElementById("v2Scoreboard");
+      const body = document.querySelector("#v1v2Table tbody");
+      const grid = document.getElementById("pairGrid");
+      if (!board || !body || !grid) return;
+
+      board.innerHTML = `
+        <div class="badge ok"><strong>V2 wins</strong> · ${block.v2_wins ?? "—"}</div>
+        <div class="badge"><strong>V1 wins</strong> · ${block.v1_wins ?? "—"}</div>
+        <div class="badge"><strong>Ties</strong> · ${block.ties ?? "—"}</div>
+        <div class="badge"><strong>Pairs</strong> · ${pairs.length}</div>
+        <div class="badge"><strong>V2 avg gross</strong> · ${block.v2_avg_gross != null ? Number(block.v2_avg_gross).toFixed(2) : "—"}</div>
+      `;
+      const hint = document.getElementById("v2SizeHint");
+      if (hint) {
+        const cfg = block.v2_size_cfg || {};
+        hint.textContent = block.method
+          ? `${block.method} Locked cfg: shrink=${cfg.shrink ?? "—"}, power=${cfg.power ?? "—"}, gross_floor=${cfg.gross_floor ?? "—"}, conf ${cfg.conf_lo ?? "—"}–${cfg.conf_hi ?? "—"}.`
+          : "";
+      }
+
+      if (!pairs.length) {
+        body.innerHTML = `<tr><td colspan="9">No V1/V2 pairs.</td></tr>`;
+        grid.innerHTML = "";
+        return;
+      }
+
+      body.innerHTML = pairs.map((p) => {
+        const dScore = Number(p.delta.score);
+        const dClass = dScore > 0 ? "delta-up" : dScore < 0 ? "delta-down" : "";
+        const fmtScore = (s, survived) => {
+          if (s == null) return "—";
+          if (survived === false || Number(s) < -500) return "REJECT";
+          return num(s);
+        };
+        return `
+          <tr>
+            <td>${p.label}</td>
+            <td><strong>${String(p.winner || "").toUpperCase()}</strong></td>
+            <td class="num">${fmtScore(p.v1.score, p.v1.survived)}</td>
+            <td class="num">${fmtScore(p.v2.score, p.v2.survived)}</td>
+            <td class="num"><strong class="${dClass}">${Math.abs(dScore) > 100 ? "survival flip" : `${dScore >= 0 ? "+" : ""}${num(dScore)}`}</strong></td>
+            <td class="num">${pct(p.v1.max_dd)}</td>
+            <td class="num">${pct(p.v2.max_dd)}</td>
+            <td class="num">${num(p.v1.sharpe)}</td>
+            <td class="num">${num(p.v2.sharpe)}</td>
+          </tr>
+        `;
+      }).join("");
+
+      grid.innerHTML = pairs.map((p, i) => {
+        const v1s = (p.v1.survived === false || Number(p.v1.score) < -500) ? "REJECT" : num(p.v1.score);
+        const v2s = (p.v2.survived === false || Number(p.v2.score) < -500) ? "REJECT" : num(p.v2.score);
+        return `
+        <div class="pair-card">
+          <h3>${p.label}</h3>
+          <div class="pair-meta">
+            Winner <strong>${String(p.winner || "").toUpperCase()}</strong>
+            · V1 ${v1s} (DD ${pct(p.v1.max_dd)})
+            · V2 ${v2s} (DD ${pct(p.v2.max_dd)})
+          </div>
+          <div class="chart-box"><canvas id="pairChart-${i}"></canvas></div>
+        </div>
+      `;
+      }).join("");
+
+      pairs.forEach((p, i) => {
+        const c1 = data.curves[p.v1.curve_key] || [];
+        const c2 = data.curves[p.v2.curve_key] || [];
+        const labels = (c1.length ? c1 : c2).map((pt) => pt.date);
+        charts.push(new Chart(document.getElementById(`pairChart-${i}`), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "V1 equal-weight",
+                data: c1.map((pt) => pt.equity),
+                borderColor: "#7aa2ff",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 1.75,
+              },
+              {
+                label: "V2 optimized",
+                data: c2.map((pt) => pt.equity),
+                borderColor: "#3dd6c6",
+                tension: 0.05,
+                pointRadius: 0,
+                borderWidth: 2,
+              },
+            ],
+          },
+          options: chartOptions({ legend: true, maxTicks: isMobile() ? 3 : 5 }),
+        }));
+      });
+    }
+
+    load()
+      .then((data) => {
+        const books = buildChartBooks(data);
+        renderBadges(data);
+        renderConfluencePanel(data);
+        renderSharedLegend(books);
+        renderWindows(data, books);
+        renderFullChart(data, books);
+        renderTable(data.metrics);
+        renderV1V2Compare(data);
+        renderTradeConfidence(data);
+        renderWarnings(data);
+      })
+      .catch((err) => {
+        document.getElementById("badges").innerHTML =
+          `<div class="badge warn"><strong>Failed to load</strong> · ${err.message}</div>`;
+      });
+
+    window.addEventListener("resize", () => {
+      charts.forEach((c) => c.resize());
+    });
+  </script>
+</body>
+</html>

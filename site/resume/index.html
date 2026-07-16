@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ethan Cardenas — Resume</title>
+  <meta name="description" content="Resume of Ethan Cardenas, Mechanical Engineering student at the University of Houston." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #111111;
+      --muted: #333333;
+      --rule: #222222;
+      --desk: #e6e6e6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Source Sans 3", "Segoe UI", sans-serif;
+      font-size: 11pt;
+      line-height: 1.35;
+      background: var(--desk);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .toolbar {
+      max-width: 8.5in;
+      margin: 0 auto;
+      padding: 0.85rem 0.5rem 0.5rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .toolbar a,
+    .toolbar button {
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #111;
+      background: #fff;
+      border: 1px solid #bbb;
+      padding: 0.4rem 0.75rem;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .hint {
+      max-width: 8.5in;
+      margin: 0 auto 0.75rem;
+      padding: 0 0.5rem;
+      color: #555;
+      font-size: 0.8rem;
+    }
+
+    /* On-screen: looks like a printed US Letter page */
+    .sheet {
+      width: 8.5in;
+      min-height: 11in;
+      margin: 0 auto 2rem;
+      background: #fff;
+      color: var(--ink);
+      padding: 0.65in 0.7in;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.08);
+    }
+
+    header.top {
+      text-align: center;
+      margin-bottom: 0.55rem;
+      padding-bottom: 0.45rem;
+      border-bottom: 1.5pt solid var(--rule);
+    }
+
+    .name {
+      margin: 0;
+      font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+      font-weight: 700;
+      font-size: 22pt;
+      letter-spacing: 0.02em;
+      line-height: 1.1;
+      text-transform: uppercase;
+    }
+
+    .contact {
+      margin: 0.35rem 0 0;
+      font-size: 10pt;
+      color: var(--muted);
+    }
+
+    .contact a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .sep {
+      margin: 0 0.35rem;
+      opacity: 0.7;
+    }
+
+    section {
+      margin-top: 0.7rem;
+    }
+
+    .section-title {
+      margin: 0 0 0.35rem;
+      font-size: 11pt;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-bottom: 1pt solid var(--rule);
+      padding-bottom: 0.12rem;
+    }
+
+    .summary {
+      margin: 0;
+      font-size: 10.5pt;
+      text-align: justify;
+      hyphens: auto;
+    }
+
+    .job {
+      margin-bottom: 0.55rem;
+    }
+
+    .job:last-child {
+      margin-bottom: 0;
+    }
+
+    .job-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.75rem;
+    }
+
+    .job-title {
+      margin: 0;
+      font-size: 11pt;
+      font-weight: 700;
+    }
+
+    .dates {
+      margin: 0;
+      font-size: 10pt;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .org-line {
+      margin: 0.05rem 0 0.2rem;
+      font-size: 10.5pt;
+      font-style: italic;
+      color: var(--muted);
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 1.05rem;
+    }
+
+    li {
+      margin: 0 0 0.18rem;
+      font-size: 10.5pt;
+    }
+
+    .coursework {
+      margin: 0.25rem 0 0;
+      font-size: 10.5pt;
+    }
+
+    .skills-line {
+      margin: 0.15rem 0;
+      font-size: 10.5pt;
+    }
+
+    .skills-line strong {
+      font-weight: 700;
+    }
+
+    @media screen and (max-width: 900px) {
+      .sheet {
+        width: auto;
+        min-height: 0;
+        margin: 0 0.75rem 2rem;
+        padding: 1.25rem 1.1rem;
+      }
+    }
+
+    @page {
+      size: letter;
+      margin: 0.6in 0.7in;
+    }
+
+    @media print {
+      html, body {
+        background: #fff !important;
+        color: #000 !important;
+        font-size: 11pt;
+      }
+
+      .toolbar,
+      .hint {
+        display: none !important;
+      }
+
+      .sheet {
+        width: auto;
+        min-height: 0;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+      }
+
+      a {
+        color: inherit !important;
+        text-decoration: none !important;
+      }
+
+      .name {
+        font-size: 20pt;
+      }
+
+      /* Keep one page when possible */
+      section {
+        break-inside: avoid;
+      }
+
+      .job {
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <a href="../">← Back</a>
+    <button type="button" onclick="window.print()">Download PDF</button>
+  </div>
+  <p class="hint">Click <strong>Download PDF</strong> → choose <strong>Save as PDF</strong> → turn off headers/footers for a clean one-page resume.</p>
+
+  <article class="sheet" aria-label="Resume for Ethan Cardenas">
+    <header class="top">
+      <h1 class="name">Ethan Cardenas</h1>
+      <p class="contact">
+        <a href="tel:18324594556">832-459-4556</a><span class="sep">|</span>
+        <a href="mailto:eacarde2@cougarnet.uh.edu">eacarde2@cougarnet.uh.edu</a><span class="sep">|</span>
+        Houston, TX
+      </p>
+    </header>
+
+    <section>
+      <h2 class="section-title">Summary</h2>
+      <p class="summary">
+        Mechanical Engineering student at the University of Houston with internship experience supporting building mechanical design, field coordination, and documentation review. AutoCAD-certified, with coursework in statics, dynamics, chemistry, and physics. Dependable team contributor who communicates clearly, manages priorities under pressure, and is eager to apply technical skills on engineering project teams.
+      </p>
+    </section>
+
+    <section>
+      <h2 class="section-title">Education</h2>
+      <div class="job">
+        <div class="job-head">
+          <h3 class="job-title">University of Houston</h3>
+          <p class="dates">Expected May 2026</p>
+        </div>
+        <p class="org-line">Bachelor of Science in Mechanical Engineering · Houston, TX</p>
+        <p class="coursework"><strong>Relevant Coursework:</strong> Statics; Dynamics; Foundations of Chemistry I &amp; II; University Physics I &amp; II</p>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="section-title">Professional Experience</h2>
+
+      <div class="job">
+        <div class="job-head">
+          <h3 class="job-title">Mechanical Engineering Intern</h3>
+          <p class="dates">Previous</p>
+        </div>
+        <p class="org-line">Wylie Engineering</p>
+        <ul>
+          <li>Collaborated with intern design teams to develop mechanical layouts for building projects.</li>
+          <li>Conducted site visits to monitor installation progress and support coordination with project requirements.</li>
+          <li>Reviewed material and equipment order forms to confirm items met applicable project standards prior to use.</li>
+        </ul>
+      </div>
+
+      <div class="job">
+        <div class="job-head">
+          <h3 class="job-title">Server / Bartender</h3>
+          <p class="dates">Current</p>
+        </div>
+        <p class="org-line">Olive Garden</p>
+        <ul>
+          <li>Deliver consistent, professional service in a high-volume environment by anticipating guest needs and responding promptly.</li>
+          <li>Balance multiple priorities under time pressure while remaining composed, accurate, and guest-focused.</li>
+          <li>Coordinate with teammates across stations to maintain service quality and resolve issues quickly.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="section-title">Skills</h2>
+      <p class="skills-line"><strong>Technical:</strong> AutoCAD (Certified), Microsoft Office</p>
+      <p class="skills-line"><strong>Engineering:</strong> Mechanical building layouts, site progress review, order-form / specification checks</p>
+      <p class="skills-line"><strong>Professional:</strong> Team collaboration, task prioritization, written and verbal communication, initiative, adaptability</p>
+    </section>
+  </article>
+</body>
+</html>
