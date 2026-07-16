@@ -61,7 +61,8 @@ python -m src.run_bakeoff
 ## GitHub
 
 **https://github.com/cyrusw17/myWorkflow** (rename to `ai-agent` when ready)  
-**Pages:** https://cyrusw17.github.io/myWorkflow/
+**Pages:** https://cyrusw17.github.io/myWorkflow/  
+**Resume page:** https://cyrusw17.github.io/myWorkflow/resume/
 
 ## Non-negotiables
 
